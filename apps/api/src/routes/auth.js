@@ -38,6 +38,14 @@ router.post("/register", async (req, res) => {
       },
     });
 
+    await prisma.passwordHistory.create({
+  data: {
+    userId: user.id,
+    password: hashedPassword,
+  },
+});
+
+
     res.status(201).json({
       message: "User registered successfully",
       user: {
@@ -116,6 +124,7 @@ router.post("/login", async (req, res) => {
  * POST /auth/refresh-token
  */
 router.post("/refresh", async (req, res) => {
+  console.log("REFRESH ROUTE HIT");
   try {
     const { refreshToken } = req.body;
 
@@ -200,18 +209,81 @@ router.post('/reset-password', async (req, res) => {
     return res.status(400).json({ message: 'Invalid or expired token' })
   }
 
+  // 1️⃣ Fetch last 3 passwords
+const lastPasswords = await prisma.passwordHistory.findMany({
+  where: { userId: user.id },
+  orderBy: { createdAt: "desc" },
+  take: 3,
+});
+
+// 2️⃣ Compare new password with history
+for (const record of lastPasswords) {
+  const isSame = await bcrypt.compare(newPassword, record.password);
+  if (isSame) {
+    return res.status(400).json({
+      message: "You cannot reuse your last 3 passwords",
+    });
+  }
+}
+
+
   const hashedPassword = await bcrypt.hash(newPassword, 10)
 
   await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      password: hashedPassword,
-      resetToken: null,
-      resetTokenExpiry: null,
-    },
-  })
+  where: { id: user.id },
+  data: {
+    password: hashedPassword,
+    resetToken: null,
+    resetTokenExpiry: null,
+  },
+})
+
+await prisma.passwordHistory.create({
+  data: {
+    userId: user.id,
+    password: hashedPassword,
+  },
+})
+
+const excess = await prisma.passwordHistory.findMany({
+  where: { userId: user.id },
+  orderBy: { createdAt: "desc" },
+  skip: 3,
+});
+
+for (const record of excess) {
+  await prisma.passwordHistory.delete({
+    where: { id: record.id },
+  });
+}
+
 
   res.json({ message: 'Password reset successful' })
 })
+
+/**
+ * LOGOUT
+ * POST /auth/logout
+ */
+router.post("/logout", async (req, res) => {
+  console.log("LOGOUT ROUTE HIT");
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: "Refresh token required" });
+    }
+
+    await prisma.user.updateMany({
+      where: { refreshToken },
+      data: { refreshToken: null },
+    });
+
+    res.json({ message: "Logged out successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 module.exports = router;
