@@ -1,3 +1,5 @@
+const crypto = require('crypto')
+
 const express = require("express");
 const router = express.Router();
 
@@ -75,18 +77,32 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign(
-      { userId: user.id , role: user.role},
+    // 🔑 short-lived access token
+    const accessToken = jwt.sign(
+      { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "15m" }
     );
+
+    // 🔁 long-lived refresh token
+    const refreshToken = require("crypto")
+      .randomBytes(40)
+      .toString("hex");
+
+    // store refresh token in DB
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken },
+    });
 
     res.json({
       message: "Login successful",
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -94,5 +110,108 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+/**
+ * REFRESH TOKEN
+ * POST /auth/refresh-token
+ */
+router.post("/refresh", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: "Refresh token required" });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { refreshToken },
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    const newAccessToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    res.json({
+      accessToken: newAccessToken,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/*password reset request
+POST /auth/request-password-reset
+*/
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' })
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } })
+
+  if (!user) {
+    return res.json({ message: 'If user exists, reset link sent' })
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex')
+  const expiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+  await prisma.user.update({
+    where: { email },
+    data: {
+      resetToken,
+      resetTokenExpiry: expiry,
+    },
+  })
+
+  // Email will be added later
+  res.json({
+    message: 'Password reset token generated',
+    resetToken, // visible for now (dev only)
+  })
+})
+/*reset password
+POST /auth/reset-password
+*/
+router.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: 'Token and new password required' })
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      resetToken: token,
+      resetTokenExpiry: { gt: new Date() },
+    },
+  })
+
+  if (!user) {
+    return res.status(400).json({ message: 'Invalid or expired token' })
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10)
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      resetToken: null,
+      resetTokenExpiry: null,
+    },
+  })
+
+  res.json({ message: 'Password reset successful' })
+})
 
 module.exports = router;
