@@ -32,6 +32,7 @@ router.post("/register", async (req, res) => {
       data: {
         email,
         password: hashedPassword,
+        role:"TESTER",
       },
     });
 
@@ -75,7 +76,7 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user.id },
+      { userId: user.id , role: user.role},
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
