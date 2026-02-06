@@ -51,3 +51,12 @@ Loaded environment variables securely using dotenv
 Tested login functionality using terminal (PowerShell)
 Validated token-based access for protected routes
 
+Day 5 – Advanced Authentication & Session Management
+Implemented password reset flow with secure reset tokens
+Added refresh token–based session management for persistent login
+Implemented session refresh API to issue new JWT access tokens
+Added logout API to invalidate sessions securely
+Implemented password history enforcement to prevent reuse of recent passwords
+Enforced role-based access control for protected routes
+
+During Week 1, the foundation of the TestTrack Pro backend was established. The project was set up as a scalable monorepo, the backend server was initialized with Node.js and Express, and PostgreSQL was integrated using Prisma ORM. Core authentication features including user registration, login, JWT-based authentication, session management with refresh tokens, logout, password reset, role-based authorization, and password history enforcement were successfully implemented, resulting in a secure and production-ready authentication system.
