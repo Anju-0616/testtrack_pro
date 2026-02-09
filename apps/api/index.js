@@ -24,6 +24,10 @@ app.get(
   }
 );
 
+const testcaseRoutes = require('./src/routes/testcase')
+
+app.use('/testcases', testcaseRoutes)
+
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

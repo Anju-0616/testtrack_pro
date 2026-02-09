@@ -22,6 +22,30 @@ model User {
   passwordResets  PasswordReset[]
 }
 
+model TestCase {
+  id          Int @id @default(autoincrement())
+  title       String
+  description String?
+  priority    Priority @default(MEDIUM)
+  status      Status   @default(DRAFT)
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum Status {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
 model PasswordHistory {
   id        Int      @id @default(autoincrement())
   userId    Int
