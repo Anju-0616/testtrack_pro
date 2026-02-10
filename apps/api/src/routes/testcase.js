@@ -49,15 +49,26 @@ router.post('/', authenticate, async (req, res) => {
 
 
 // GET /testcases
+// GET /testcases (with filters)
 router.get('/', authenticate, async (req, res) => {
   try {
-    const cases = await prisma.testCase.findMany()
+    const { priority, status } = req.query
+
+    const cases = await prisma.testCase.findMany({
+      where: {
+        priority: priority || undefined,
+        status: status || undefined,
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
     res.json(cases)
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Internal server error' })
   }
 })
+
 
 console.log("Testcase routes loaded")
 
