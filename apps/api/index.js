@@ -34,6 +34,9 @@ const testcaseRoutes = require('./src/routes/testcase')
 
 app.use('/testcases', testcaseRoutes)
 
+const bugRoutes = require('./src/routes/bug.routes')
+app.use('/bugs', bugRoutes)
+
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -1,0 +1,9 @@
+{
+  "name": "testtrack-pro",
+  "private": true,
+  "packageManager": "pnpm@8.15.4",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev"
+  }
+}

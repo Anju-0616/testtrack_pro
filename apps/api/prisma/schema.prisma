@@ -11,27 +11,38 @@ model User {
   email            String            @unique
   password         String
   id               Int               @id @default(autoincrement())
-  role             String            @default("TESTER")
+  role Role @default(TESTER)
+  isVerified        Boolean @default(false)
+  verificationToken String?
+  verificationTokenExpiry DateTime?
   resetToken       String?
   resetTokenExpiry DateTime?
   refreshToken     String?
   passwordHistory  PasswordHistory[]
   passwordResets   PasswordReset[]
   refreshTokens    RefreshToken[]
+
+  reportedBugs Bug[] @relation("ReportedBugs")
+  assignedBugs Bug[] @relation("AssignedBugs")
 }
 
+enum Role {
+  TESTER
+  DEVELOPER
+  }
 model TestCase {
   title       String
   description String?
-  priority    Priority        @default(MEDIUM)
-  status      Status          @default(DRAFT)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  priority    Priority @default(MEDIUM)
+  status      Status   @default(DRAFT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   createdBy   Int
-  id          Int             @id @default(autoincrement())
-  isDeleted Boolean @default(false)
+  id          Int      @id @default(autoincrement())
+  isDeleted   Boolean  @default(false)
 
-  executions  TestExecution[]
+  executions TestExecution[]
+  bugs       Bug[]
 }
 
 model PasswordHistory {
@@ -80,4 +91,60 @@ enum Status {
   DRAFT
   READY
   ARCHIVED
+}
+
+model Bug {
+  id               Int    @id @default(autoincrement())
+  bugId            String @unique
+  title            String
+  description      String
+  stepsToReproduce String
+  expectedBehavior String
+  actualBehavior   String
+
+  severity Severity
+  priority BugPriority
+  status   BugStatus   @default(NEW)
+
+  environment     String?
+  affectedVersion String?
+
+  assignedToId Int?
+  assignedTo   User? @relation("AssignedBugs", fields: [assignedToId], references: [id])
+
+  testCaseId Int?
+  testCase   TestCase? @relation(fields: [testCaseId], references: [id])
+
+  createdById Int
+  createdBy   User @relation("ReportedBugs", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Severity {
+  BLOCKER
+  CRITICAL
+  MAJOR
+  MINOR
+  TRIVIAL
+}
+
+enum BugPriority {
+  P1_URGENT
+  P2_HIGH
+  P3_MEDIUM
+  P4_LOW
+}
+
+enum BugStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  FIXED
+  VERIFIED
+  CLOSED
+  REOPENED
+  WONT_FIX
+  DUPLICATE
 }

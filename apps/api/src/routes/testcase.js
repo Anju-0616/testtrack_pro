@@ -58,6 +58,43 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+// GET /testcases/dashboard/summary
+router.get('/Dashboard/summary', authenticate, async (req, res) => {
+  try {
+    const totalTestcases = await prisma.testCase.count({
+      where: { isDeleted: false }
+    })
+
+    const totalExecutions = await prisma.testExecution.count()
+
+    const passCount = await prisma.testExecution.count({
+      where: { status: "PASS" }
+    })
+
+    const failCount = await prisma.testExecution.count({
+      where: { status: "FAIL" }
+    })
+
+    const passRate =
+      totalExecutions === 0
+        ? 0
+        : Math.round((passCount / totalExecutions) * 100)
+
+    res.json({
+      totalTestcases,
+      totalExecutions,
+      passCount,
+      failCount,
+      passRate
+    })
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Internal server error" })
+  }
+})
+
+
 /* ============================
    GET SINGLE TESTCASE
    GET /testcases/:id
@@ -238,5 +275,34 @@ router.post('/:id/clone', authenticate, async (req, res) => {
     res.status(500).json({ message: 'Internal server error' })
   }
 })
+
+// GET /testcases/:id/summary
+router.get('/:id/summary', authenticate, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id)
+
+    const executions = await prisma.testExecution.findMany({
+      where: { testcaseId: id }
+    })
+
+    const passCount = executions.filter(e => e.status === "PASS").length
+    const failCount = executions.filter(e => e.status === "FAIL").length
+
+    res.json({
+      testcaseId: id,
+      totalExecutions: executions.length,
+      passCount,
+      failCount,
+    })
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Internal server error" })
+  }
+})
+
+// GET /dashboard/summary
+
+
 
 module.exports = router

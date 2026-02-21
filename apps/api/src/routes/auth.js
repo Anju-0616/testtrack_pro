@@ -14,18 +14,39 @@ const prisma = require("../prisma");
  */
 router.post("/register", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
+      return res.status(400).json({ 
+        message: "Email and password are required" 
+      });
+    }
+
+    // ✅ Validate role
+    const allowedRoles = ["TESTER", "DEVELOPER"];
+
+    const selectedRole = role ? role.toUpperCase() : "TESTER";
+
+    if (!allowedRoles.includes(selectedRole)) {
+      return res.status(400).json({
+        message: "Invalid role selected"
+      });
     }
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
     });
 
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const verificationTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); 
+    const verificationLink = `http://localhost:5173/verify-email?token=${verificationToken}`;
+
+
+
     if (existingUser) {
-      return res.status(409).json({ message: "User already exists" });
+      return res.status(409).json({ 
+        message: "User already exists" 
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -34,30 +55,83 @@ router.post("/register", async (req, res) => {
       data: {
         email,
         password: hashedPassword,
-        role:"TESTER",
+        role: selectedRole, // ✅ dynamic role
+        verificationToken,
+        verificationTokenExpiry,
+        isVerified: false,
       },
     });
 
     await prisma.passwordHistory.create({
-  data: {
-    userId: user.id,
-    password: hashedPassword,
-  },
-});
-
+      data: {
+        userId: user.id,
+        password: hashedPassword,
+      },
+    });
 
     res.status(201).json({
-      message: "User registered successfully",
+      message: "User registered successfully, please verify your email",
       user: {
         id: user.id,
         email: user.email,
+        role: user.role, // optional but useful
+        verificationToken,
+        verificationLink, 
       },
     });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ 
+      message: "Internal server error" 
+    });
+  }
+});
+
+/**
+ * VERIFY EMAIL
+ * GET /auth/verify-email?token=abc123
+ */
+router.get("/verify-email", async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({ message: "Token is required" });
+    }
+
+    const user = await prisma.user.findFirst({
+  where: {
+    verificationToken: token,
+    verificationTokenExpiry: {
+      gt: new Date(),
+    },
+  },
+});
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired verification token",
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isVerified: true,
+        verificationToken: null,
+        verificationTokenExpiry: null,
+      },
+    });
+
+    res.json({ message: "Email verified successfully!" });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 
 /**
  * LOGIN
@@ -84,6 +158,12 @@ router.post("/login", async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
+
+    if (!user.isVerified) {
+  return res.status(403).json({
+    message: "Please verify your email before logging in",
+  });
+}
 
     // 🔑 short-lived access token
     const accessToken = jwt.sign(
