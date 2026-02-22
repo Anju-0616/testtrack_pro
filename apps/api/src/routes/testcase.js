@@ -1,6 +1,6 @@
 const express = require('express')
 const prisma = require('../prisma')
-const { authenticate } = require('../middleware/auth')
+const { authenticate, authorizeRole } = require('../middleware/auth')
 
 const router = express.Router()
 
@@ -304,5 +304,41 @@ router.get('/:id/summary', authenticate, async (req, res) => {
 // GET /dashboard/summary
 
 
+/*
+  ADD STEP TO TEST CASE
+  POST /testcases/:id/steps
+*/
+router.post(
+  '/:id/steps',
+  authenticate,
+  authorizeRole('TESTER'),
+  async (req, res) => {
+    try {
+      const testCaseId = parseInt(req.params.id)
+      const { stepNumber, action, expectedResult } = req.body
+
+      if (!stepNumber || !action || !expectedResult) {
+        return res.status(400).json({
+          message: "stepNumber, action and expectedResult are required"
+        })
+      }
+
+      const step = await prisma.testCaseStep.create({
+        data: {
+          testCaseId,
+          stepNumber,
+          action,
+          expectedResult
+        }
+      })
+
+      res.status(201).json(step)
+
+    } catch (error) {
+      console.error(error)
+      res.status(500).json({ message: "Failed to add step" })
+    }
+  }
+)
 
 module.exports = router
