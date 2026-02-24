@@ -389,4 +389,237 @@ router.get("/developer-performance", authenticate, async (req, res) => {
   }
 });
 
+router.get("/tester-performance", authenticate, async (req, res) => {
+  try {
+
+    // Get all testers
+    const testers = await prisma.user.findMany({
+      where: { role: "TESTER" },
+      select: { id: true, email: true }
+    });
+
+    const performance = [];
+
+    for (const tester of testers) {
+
+      // Total executions
+      const executions = await prisma.testExecution.findMany({
+        where: { executedBy: tester.id },
+        select: {
+          testcaseId: true,
+          duration: true
+        }
+      });
+
+      const totalExecuted = executions.length;
+
+      // Unique test cases executed (coverage)
+      const uniqueTestcases = new Set(
+        executions.map(e => e.testcaseId)
+      );
+
+      const coverageCount = uniqueTestcases.size;
+
+      // Average execution duration (efficiency)
+      const durations = executions
+        .map(e => e.duration)
+        .filter(Boolean);
+
+      const avgDuration =
+        durations.length > 0
+          ? Number(
+              (
+                durations.reduce((a, b) => a + b, 0) /
+                durations.length
+              ).toFixed(2)
+            )
+          : 0;
+
+      // Bugs reported
+      const bugsReported = await prisma.bug.count({
+        where: { createdById: tester.id }
+      });
+
+      // Bug detection rate
+      const bugDetectionRate =
+        totalExecuted > 0
+          ? Number(((bugsReported / totalExecuted) * 100).toFixed(2))
+          : 0;
+
+      performance.push({
+        testerId: tester.id,
+        name: tester.email,
+        testCasesExecuted: totalExecuted,
+        coverage: coverageCount,
+        avgExecutionDurationSeconds: avgDuration,
+        bugsReported,
+        bugDetectionRate
+      });
+    }
+
+    res.json(performance);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to generate tester report" });
+  }
+});
+
+const { Parser } = require("json2csv");
+
+router.get("/export/execution/csv", authenticate, async (req, res) => {
+  try {
+    const executions = await prisma.testExecution.findMany({
+      include: {
+        testcase: { select: { title: true, module: true } },
+        tester: { select: { email: true } }
+      }
+    });
+
+    const formatted = executions.map(e => ({
+      ExecutionID: e.id,
+      TestCase: e.testcase.title,
+      Module: e.testcase.module,
+      Tester: e.tester.email,
+      Status: e.status,
+      ExecutedAt: e.executedAt
+    }));
+
+    const parser = new Parser();
+    const csv = parser.parse(formatted);
+
+    res.header("Content-Type", "text/csv");
+    res.attachment("execution-report.csv");
+    return res.send(csv);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "CSV export failed" });
+  }
+});
+
+const ExcelJS = require("exceljs");
+
+router.get("/export/execution/excel", authenticate, async (req, res) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Execution Report");
+
+    sheet.columns = [
+      { header: "Execution ID", key: "id" },
+      { header: "Test Case", key: "title" },
+      { header: "Module", key: "module" },
+      { header: "Tester", key: "tester" },
+      { header: "Status", key: "status" },
+      { header: "Executed At", key: "executedAt" }
+    ];
+
+    const executions = await prisma.testExecution.findMany({
+      include: {
+        testcase: true,
+        tester: true
+      }
+    });
+
+    executions.forEach(e => {
+      sheet.addRow({
+        id: e.id,
+        title: e.testcase.title,
+        module: e.testcase.module,
+        tester: e.tester.email,
+        status: e.status,
+        executedAt: e.executedAt
+      });
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=execution-report.xlsx"
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Excel export failed" });
+  }
+});
+
+const PDFDocument = require("pdfkit");
+
+router.get("/export/execution/pdf", authenticate, async (req, res) => {
+  try {
+    const doc = new PDFDocument();
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "attachment; filename=execution-report.pdf");
+
+    doc.pipe(res);
+
+    doc.fontSize(18).text("Execution Report", { align: "center" });
+    doc.moveDown();
+
+    const executions = await prisma.testExecution.findMany({
+      include: { testcase: true, tester: true }
+    });
+
+    executions.forEach(e => {
+      doc.fontSize(12).text(
+        `ID: ${e.id} | ${e.testcase.title} | ${e.status} | ${e.tester.email}`
+      );
+    });
+
+    doc.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "PDF export failed" });
+  }
+});
+
+const cron = require("node-cron");
+const nodemailer = require("nodemailer");
+
+cron.schedule("0 9 * * 1", async () => {
+  console.log("Running weekly test report...");
+
+  const totalExecutions = await prisma.testExecution.count();
+
+  const passed = await prisma.testExecution.count({
+    where: { status: "PASS" }
+  });
+
+  const totalBugs = await prisma.bug.count();
+
+  const passRate =
+    totalExecutions > 0
+      ? ((passed / totalExecutions) * 100).toFixed(2)
+      : 0;
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: "manager@example.com",
+    subject: "Weekly Test Summary Report",
+    text: `
+Weekly QA Summary
+
+Total Executions: ${totalExecutions}
+Pass Rate: ${passRate}%
+Total Bugs: ${totalBugs}
+    `
+  });
+});
+
 module.exports = router;

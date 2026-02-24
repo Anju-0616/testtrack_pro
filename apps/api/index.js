@@ -33,6 +33,8 @@ app.use("/bugs", bugRoutes);
 const executionRoutes = require("./src/routes/execution.routes");
 app.use("/executions", executionRoutes);
 
+const dashboardRoutes = require("./src/routes/dashboard.routes");
+app.use("/dashboard", dashboardRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
