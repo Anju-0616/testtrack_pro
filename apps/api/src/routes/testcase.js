@@ -12,7 +12,7 @@ console.log("Testcase routes loaded")
 ============================ */
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { title, description, priority } = req.body
+    const { title, description, priority, module } = req.body
 
     if (!title) {
       return res.status(400).json({ message: 'Title required' })
@@ -23,6 +23,7 @@ router.post('/', authenticate, async (req, res) => {
         title,
         description,
         priority,
+        module,
         createdBy: req.user.userId
       }
     })
@@ -340,5 +341,22 @@ router.post(
     }
   }
 )
+
+//debug
+router.post('/debug', async (req, res) => {
+  try {
+    const test = await prisma.testCase.create({
+      data: {
+        title: "Debug Test",
+        module: "Auth",
+        createdBy: 1
+      }
+    })
+    res.json(test)
+  } catch (e) {
+    console.error(e)
+    res.json({ error: e.message })
+  }
+})
 
 module.exports = router

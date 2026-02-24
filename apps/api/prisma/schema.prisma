@@ -26,6 +26,8 @@ model User {
   assignedBugs Bug[] @relation("AssignedBugs")
 
   bugComment BugComment[]
+
+  executions TestExecution[]
 }
 
 enum Role {
@@ -46,6 +48,8 @@ model TestCase {
   executions TestExecution[]
   bugs       Bug[]
   steps TestCaseStep[]
+
+  module String
 }
 
 model PasswordHistory {
@@ -75,16 +79,21 @@ model PasswordReset {
 }
 
 model TestExecution {
-  id         Int      @id @default(autoincrement())
-  testcaseId Int
-  executedBy Int
-  status     String
-  executedAt DateTime @default(now())
-  testcase   TestCase @relation(fields: [testcaseId], references: [id], onDelete: Cascade)
+  id           Int      @id @default(autoincrement())
 
-  startedAt DateTime?
-  completedAt DateTime?
-  duration Int?  // store in seconds
+  testcaseId   Int
+  testcase     TestCase @relation(fields: [testcaseId], references: [id], onDelete: Cascade)
+
+  executedBy   Int
+  tester       User     @relation(fields: [executedBy], references: [id])
+
+  status       String
+  executedAt   DateTime @default(now())
+
+  startedAt    DateTime?
+  completedAt  DateTime?
+  duration     Int?
+
   executionSteps ExecutionStep[]
 }
 
