@@ -8,48 +8,40 @@ datasource db {
 }
 
 model User {
-  email            String            @unique
-  password         String
-  id               Int               @id @default(autoincrement())
-  role Role @default(TESTER)
-  isVerified        Boolean @default(false)
-  verificationToken String?
+  email                   String            @unique
+  password                String
+  id                      Int               @id @default(autoincrement())
+  role                    Role              @default(TESTER)
+  isVerified              Boolean           @default(false)
+  verificationToken       String?
   verificationTokenExpiry DateTime?
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  refreshToken     String?
-  passwordHistory  PasswordHistory[]
-  passwordResets   PasswordReset[]
-  refreshTokens    RefreshToken[]
-
-  reportedBugs Bug[] @relation("ReportedBugs")
-  assignedBugs Bug[] @relation("AssignedBugs")
-
-  bugComment BugComment[]
-
-  executions TestExecution[]
+  resetToken              String?
+  resetTokenExpiry        DateTime?
+  refreshToken            String?
+  assignedBugs            Bug[]             @relation("AssignedBugs")
+  reportedBugs            Bug[]             @relation("ReportedBugs")
+  bugComment              BugComment[]
+  passwordHistory         PasswordHistory[]
+  passwordResets          PasswordReset[]
+  refreshTokens           RefreshToken[]
+  executions              TestExecution[]
+  dashboardLayout String?
 }
 
-enum Role {
-  TESTER
-  DEVELOPER
-  }
 model TestCase {
   title       String
   description String?
-  priority    Priority @default(MEDIUM)
-  status      Status   @default(DRAFT)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  priority    Priority        @default(MEDIUM)
+  status      Status          @default(DRAFT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   createdBy   Int
-  id          Int      @id @default(autoincrement())
-  isDeleted   Boolean  @default(false)
-
-  executions TestExecution[]
-  bugs       Bug[]
-  steps TestCaseStep[]
-
-  module String
+  id          Int             @id @default(autoincrement())
+  isDeleted   Boolean         @default(false)
+  module      String
+  bugs        Bug[]
+  steps       TestCaseStep[]
+  executions  TestExecution[]
 }
 
 model PasswordHistory {
@@ -79,22 +71,83 @@ model PasswordReset {
 }
 
 model TestExecution {
-  id           Int      @id @default(autoincrement())
-
-  testcaseId   Int
-  testcase     TestCase @relation(fields: [testcaseId], references: [id], onDelete: Cascade)
-
-  executedBy   Int
-  tester       User     @relation(fields: [executedBy], references: [id])
-
-  status       String
-  executedAt   DateTime @default(now())
-
-  startedAt    DateTime?
-  completedAt  DateTime?
-  duration     Int?
-
+  id             Int             @id @default(autoincrement())
+  testcaseId     Int
+  executedBy     Int
+  status         String
+  executedAt     DateTime        @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  duration       Int?
   executionSteps ExecutionStep[]
+  tester         User            @relation(fields: [executedBy], references: [id])
+  testcase       TestCase        @relation(fields: [testcaseId], references: [id], onDelete: Cascade)
+}
+
+model Bug {
+  id               Int          @id @default(autoincrement())
+  bugId            String       @unique
+  title            String
+  description      String
+  stepsToReproduce String
+  expectedBehavior String
+  actualBehavior   String
+  severity         Severity
+  priority         BugPriority
+  status           BugStatus    @default(NEW)
+  environment      String?
+  affectedVersion  String?
+  fixNotes         String?
+  commitHash       String?
+  branchName       String?
+  resolvedAt       DateTime?
+  assignedToId     Int?
+  testCaseId       Int?
+  createdById      Int
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  assignedTo       User?        @relation("AssignedBugs", fields: [assignedToId], references: [id])
+  createdBy        User         @relation("ReportedBugs", fields: [createdById], references: [id])
+  testCase         TestCase?    @relation(fields: [testCaseId], references: [id])
+  Comment          BugComment[]
+}
+
+model BugComment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  bugId     Int
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ExecutionStep {
+  id             Int                  @id @default(autoincrement())
+  executionId    Int
+  testCaseStepId Int
+  actualResult   String?
+  stepStatus     ExecutionStepStatus?
+  execution      TestExecution        @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  testCaseStep   TestCaseStep         @relation(fields: [testCaseStepId], references: [id])
+}
+
+model TestCaseStep {
+  id             Int             @id @default(autoincrement())
+  testCaseId     Int
+  stepNumber     Int
+  action         String
+  expectedResult String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  executionSteps ExecutionStep[]
+  testCase       TestCase        @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  TESTER
+  DEVELOPER
 }
 
 enum Priority {
@@ -108,45 +161,6 @@ enum Status {
   DRAFT
   READY
   ARCHIVED
-}
-
-model Bug {
-  id               Int        @id @default(autoincrement())
-  bugId            String     @unique
-
-  title            String
-  description      String
-  stepsToReproduce String
-  expectedBehavior String
-  actualBehavior   String
-
-  severity         Severity
-  priority         BugPriority
-  status           BugStatus  @default(NEW)
-
-  environment      String?
-  affectedVersion  String?
-
-  // Developer Resolution Fields
-  fixNotes         String?
-  commitHash       String?
-  branchName       String?
-  resolvedAt       DateTime?
-
-  // Relations
-  assignedToId     Int?
-  assignedTo       User?      @relation("AssignedBugs", fields: [assignedToId], references: [id])
-
-  testCaseId       Int?
-  testCase         TestCase?  @relation(fields: [testCaseId], references: [id])
-
-  createdById      Int
-  createdBy        User       @relation("ReportedBugs", fields: [createdById], references: [id])
-
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-
-  Comment BugComment[]
 }
 
 enum Severity {
@@ -176,52 +190,9 @@ enum BugStatus {
   DUPLICATE
 }
 
-model BugComment {
-  id        Int      @id @default(autoincrement())
-  content   String
-
-  bugId     Int
-  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
-
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ExecutionStep {
-  id              Int      @id @default(autoincrement())
-
-  executionId     Int
-  execution       TestExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
-
-  testCaseStepId  Int
-  testCaseStep    TestCaseStep  @relation(fields: [testCaseStepId], references: [id])
-
-  actualResult    String?
-  stepStatus      ExecutionStepStatus?
-}
-
 enum ExecutionStepStatus {
   PASS
   FAIL
   BLOCKED
   SKIPPED
-}
-
-model TestCaseStep {
-  id            Int      @id @default(autoincrement())
-
-  testCaseId    Int
-  testCase      TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
-
-  stepNumber    Int
-  action        String
-  expectedResult String
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  executionSteps ExecutionStep[]
 }
