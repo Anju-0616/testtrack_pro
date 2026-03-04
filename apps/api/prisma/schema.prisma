@@ -10,6 +10,7 @@ datasource db {
 model User {
   email                   String            @unique
   password                String
+  name                    String?
   id                      Int               @id @default(autoincrement())
   role                    Role              @default(TESTER)
   isVerified              Boolean           @default(false)
@@ -25,23 +26,27 @@ model User {
   passwordResets          PasswordReset[]
   refreshTokens           RefreshToken[]
   executions              TestExecution[]
-  dashboardLayout String?
+  dashboardLayout         String?
+  notifications           Notification[]
+  assignedTestCases       TestCase[]        @relation("AssignedTestCases")
 }
 
 model TestCase {
-  title       String
-  description String?
-  priority    Priority        @default(MEDIUM)
-  status      Status          @default(DRAFT)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  createdBy   Int
-  id          Int             @id @default(autoincrement())
-  isDeleted   Boolean         @default(false)
-  module      String
-  bugs        Bug[]
-  steps       TestCaseStep[]
-  executions  TestExecution[]
+  title        String
+  description  String?
+  priority     Priority        @default(MEDIUM)
+  status       Status          @default(DRAFT)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  createdBy    Int
+  id           Int             @id @default(autoincrement())
+  isDeleted    Boolean         @default(false)
+  module       String
+  assignedToId Int?
+  assignedTo   User?           @relation("AssignedTestCases", fields: [assignedToId], references: [id])
+  bugs         Bug[]
+  steps        TestCaseStep[]
+  executions   TestExecution[]
 }
 
 model PasswordHistory {
@@ -195,4 +200,20 @@ enum ExecutionStepStatus {
   FAIL
   BLOCKED
   SKIPPED
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  type        String
+  title       String
+  message     String
+  relatedId   String?
+  relatedType String? // BUG, TEST_CASE, COMMENT
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

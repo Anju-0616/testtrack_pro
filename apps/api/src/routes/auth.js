@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Authentication
+ *   description: User authentication & session management
+ */
+
 const crypto = require('crypto')
 
 const express = require("express");
@@ -8,28 +15,56 @@ const jwt = require("jsonwebtoken");
 
 const prisma = require("../prisma");
 
+
+
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [TESTER, DEVELOPER]
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ */
+
 /**
  * REGISTER
  * POST /auth/register
  */
+const { sendVerificationEmail } = require("../services/email.service");
+
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const {name, email, password, role } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ 
-        message: "Email and password are required" 
+      return res.status(400).json({
+        message: "Email and password are required",
       });
     }
 
-    // ✅ Validate role
     const allowedRoles = ["TESTER", "DEVELOPER"];
-
     const selectedRole = role ? role.toUpperCase() : "TESTER";
 
     if (!allowedRoles.includes(selectedRole)) {
       return res.status(400).json({
-        message: "Invalid role selected"
+        message: "Invalid role selected",
       });
     }
 
@@ -37,25 +72,26 @@ router.post("/register", async (req, res) => {
       where: { email },
     });
 
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const verificationTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); 
-    const verificationLink = `http://localhost:5173/verify-email?token=${verificationToken}`;
-
-
-
     if (existingUser) {
-      return res.status(409).json({ 
-        message: "User already exists" 
+      return res.status(409).json({
+        message: "User already exists",
       });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // 🔐 Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const verificationTokenExpiry = new Date(
+      Date.now() + 60 * 60 * 1000
+    ); // 1 hour
+
     const user = await prisma.user.create({
       data: {
+        name,
         email,
         password: hashedPassword,
-        role: selectedRole, // ✅ dynamic role
+        role: selectedRole,
         verificationToken,
         verificationTokenExpiry,
         isVerified: false,
@@ -69,24 +105,42 @@ router.post("/register", async (req, res) => {
       },
     });
 
+    // 📧 Send REAL email
+    await sendVerificationEmail(user.email, verificationToken);
+
     res.status(201).json({
-      message: "User registered successfully, please verify your email",
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role, // optional but useful
-        verificationToken,
-        verificationLink, 
-      },
+      message:
+        "User registered successfully. Please check your email to verify your account.",
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ 
-      message: "Internal server error" 
+    res.status(500).json({
+      message: "Internal server error",
     });
   }
 });
+
+
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   get:
+ *     summary: Verify user email
+ *     tags: [Authentication]
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Email verification token
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
 
 /**
  * VERIFY EMAIL
@@ -132,6 +186,34 @@ router.get("/verify-email", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Login user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: tester@example.com
+ *               password:
+ *                 type: string
+ *                 example: Test@123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Email not verified
+ */
 
 /**
  * LOGIN
@@ -200,6 +282,29 @@ router.post("/login", async (req, res) => {
 });
 
 /**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: Generate new access token using refresh token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: New access token generated
+ *       401:
+ *         description: Invalid refresh token
+ */
+
+/**
  * REFRESH TOKEN
  * POST /auth/refresh-token
  */
@@ -235,6 +340,29 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Reset token generated (dev mode)
+ *       400:
+ *         description: Email required
+ */
+
 /*password reset request
 POST /auth/request-password-reset
 */
@@ -268,6 +396,32 @@ router.post('/forgot-password', async (req, res) => {
     resetToken, // visible for now (dev only)
   })
 })
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password using token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ *       400:
+ *         description: Invalid or expired token
+ */
+
 /*reset password
 POST /auth/reset-password
 */
@@ -342,6 +496,29 @@ for (const record of excess) {
 })
 
 /**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout user and invalidate refresh token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ *       400:
+ *         description: Refresh token required
+ */
+
+/**
  * LOGOUT
  * POST /auth/logout
  */
@@ -365,5 +542,92 @@ router.post("/logout", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+/**
+ * DELETE OWN ACCOUNT
+ * DELETE /auth/me
+ */
+const { authenticate } = require("../middleware/auth");
+
+router.delete("/me", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Delete related records
+    await prisma.notification.deleteMany({ where: { userId } });
+    await prisma.bugComment.deleteMany({ where: { userId } });
+    await prisma.passwordHistory.deleteMany({ where: { userId } });
+    await prisma.passwordReset.deleteMany({ where: { userId } });
+    await prisma.refreshToken.deleteMany({ where: { userId } });
+    await prisma.testExecution.deleteMany({ where: { executedBy: userId } });
+
+    // Remove bug relations
+    await prisma.bug.updateMany({
+      where: { assignedToId: userId },
+      data: { assignedToId: null },
+    });
+
+    await prisma.bug.updateMany({
+      where: { createdById: userId },
+      data: { createdById: null },
+    });
+
+    // Finally delete user
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    res.json({ message: "Account deleted successfully" });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to delete account" });
+  }
+});
+
+router.get("/me", authenticate, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId }, // IMPORTANT FIX
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch user" });
+  }
+});
+
+router.patch("/me", authenticate, async (req, res) => {
+  try {
+    const { name } = req.body
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { name },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true
+      }
+    })
+
+    res.json(updatedUser)
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ message: "Failed to update profile" })
+  }
+})
 
 module.exports = router;

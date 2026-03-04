@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: TestCases
+ *   description: Test case management APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
@@ -8,107 +15,102 @@ console.log("Testcase routes loaded")
 
 /* ============================
    CREATE TESTCASE
-   POST /testcases
 ============================ */
-router.post('/', authenticate, async (req, res) => {
+
+/**
+ * @swagger
+ * /test-cases:
+ *   post:
+ *     summary: Create a new test case (Tester only)
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
     const { title, description, priority, module } = req.body
 
-    if (!title) {
-      return res.status(400).json({ message: 'Title required' })
+    if (!title || !priority || !module) {
+      return res.status(400).json({
+        message: "Title, priority and module are required"
+      })
     }
 
     const testcase = await prisma.testCase.create({
       data: {
         title,
-        description,
+        description: description || "",
         priority,
+        status: "DRAFT",
         module,
         createdBy: req.user.userId
       }
     })
 
     res.status(201).json(testcase)
+
   } catch (err) {
     console.error(err)
-    res.status(500).json({ message: 'Internal server error' })
+    res.status(500).json({ message: 'Failed to create test case' })
   }
 })
 
 /* ============================
-   LIST TESTCASES (with filters)
-   GET /testcases
+   GET TESTCASES (WITH FILTERS)
 ============================ */
+
+/**
+ * @swagger
+ * /test-cases:
+ *   get:
+ *     summary: Get test cases (filters supported)
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ */
 router.get('/', authenticate, async (req, res) => {
   try {
     const { priority, status } = req.query
 
+    let whereClause = {
+      isDeleted: false
+    }
+
+    if (priority) whereClause.priority = priority
+    if (status) whereClause.status = status
+
     const cases = await prisma.testCase.findMany({
-      where: {
-        isDeleted: false,
-        priority: priority || undefined,
-        status: status || undefined,
-      },
-      orderBy: { createdAt: 'desc' },
+      where: whereClause,
+      orderBy: { createdAt: 'desc' }
     })
 
     res.json(cases)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-// GET /testcases/dashboard/summary
-router.get('/Dashboard/summary', authenticate, async (req, res) => {
-  try {
-    const totalTestcases = await prisma.testCase.count({
-      where: { isDeleted: false }
-    })
-
-    const totalExecutions = await prisma.testExecution.count()
-
-    const passCount = await prisma.testExecution.count({
-      where: { status: "PASS" }
-    })
-
-    const failCount = await prisma.testExecution.count({
-      where: { status: "FAIL" }
-    })
-
-    const passRate =
-      totalExecutions === 0
-        ? 0
-        : Math.round((passCount / totalExecutions) * 100)
-
-    res.json({
-      totalTestcases,
-      totalExecutions,
-      passCount,
-      failCount,
-      passRate
-    })
 
   } catch (err) {
     console.error(err)
-    res.status(500).json({ message: "Internal server error" })
+    res.status(500).json({ message: 'Failed to fetch test cases' })
   }
 })
-
 
 /* ============================
    GET SINGLE TESTCASE
-   GET /testcases/:id
 ============================ */
+
+/**
+ * @swagger
+ * /test-cases/{id}:
+ *   get:
+ *     summary: Get single test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ */
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id)
 
     const testcase = await prisma.testCase.findFirst({
-      where: {
-        id,
-        isDeleted: false
-      }
+      where: { id, isDeleted: false }
     })
 
     if (!testcase) {
@@ -116,144 +118,32 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     res.json(testcase)
+
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/* ============================
-   UPDATE TESTCASE
-   PUT /testcases/:id
-============================ */
-router.put('/:id', authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id)
-    const { title, description, priority } = req.body
-
-    const existing = await prisma.testCase.findFirst({
-      where: {
-        id,
-        isDeleted: false
-      }
-    })
-
-    if (!existing) {
-      return res.status(404).json({ message: 'Testcase not found' })
-    }
-
-    const updated = await prisma.testCase.update({
-      where: { id },
-      data: { title, description, priority }
-    })
-
-    res.json(updated)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/* ============================
-   SOFT DELETE TESTCASE
-   DELETE /testcases/:id
-============================ */
-router.delete('/:id', authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id)
-
-    const existing = await prisma.testCase.findUnique({
-      where: { id }
-    })
-
-    if (!existing || existing.isDeleted) {
-      return res.status(404).json({ message: 'Testcase not found' })
-    }
-
-    await prisma.testCase.update({
-      where: { id },
-      data: { isDeleted: true }
-    })
-
-    res.json({ message: 'Testcase soft deleted successfully' })
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-/* ============================
-   EXECUTE TESTCASE (PASS / FAIL)
-   POST /testcases/:id/execute
-============================ */
-router.post('/:id/execute', authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id)
-    const { status } = req.body
-
-    if (!["PASS", "FAIL"].includes(status)) {
-      return res.status(400).json({ message: "Status must be PASS or FAIL" })
-    }
-
-    const testcase = await prisma.testCase.findFirst({
-      where: {
-        id,
-        isDeleted: false
-      }
-    })
-
-    if (!testcase) {
-      return res.status(404).json({ message: "Testcase not found" })
-    }
-
-    const execution = await prisma.testExecution.create({
-      data: {
-        testcaseId: id,
-        executedBy: req.user.userId,
-        status,
-      }
-    })
-
-    res.json(execution)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Internal server error" })
-  }
-})
-
-/* ============================
-   GET EXECUTION HISTORY
-   GET /testcases/:id/executions
-============================ */
-router.get('/:id/executions', authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id)
-
-    const executions = await prisma.testExecution.findMany({
-      where: { testcaseId: id },
-      orderBy: { executedAt: 'desc' }
-    })
-
-    res.json(executions)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Internal server error" })
   }
 })
 
 /* ============================
    CLONE TESTCASE
-   POST /testcases/:id/clone
 ============================ */
+
+/**
+ * @swagger
+ * /test-cases/{id}/clone:
+ *   post:
+ *     summary: Clone a test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ */
 router.post('/:id/clone', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id)
 
     const original = await prisma.testCase.findFirst({
-      where: {
-        id,
-        isDeleted: false
-      }
+      where: { id, isDeleted: false }
     })
 
     if (!original) {
@@ -263,99 +153,20 @@ router.post('/:id/clone', authenticate, async (req, res) => {
     const cloned = await prisma.testCase.create({
       data: {
         title: original.title + ' (Copy)',
-        description: original.description,
+        description: original.description || "",
         priority: original.priority,
-        status: original.status,
+        status: "DRAFT",
+        module: original.module,
         createdBy: req.user.userId,
+        isDeleted: false
       }
     })
 
     res.status(201).json(cloned)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-// GET /testcases/:id/summary
-router.get('/:id/summary', authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id)
-
-    const executions = await prisma.testExecution.findMany({
-      where: { testcaseId: id }
-    })
-
-    const passCount = executions.filter(e => e.status === "PASS").length
-    const failCount = executions.filter(e => e.status === "FAIL").length
-
-    res.json({
-      testcaseId: id,
-      totalExecutions: executions.length,
-      passCount,
-      failCount,
-    })
 
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Internal server error" })
-  }
-})
-
-// GET /dashboard/summary
-
-
-/*
-  ADD STEP TO TEST CASE
-  POST /testcases/:id/steps
-*/
-router.post(
-  '/:id/steps',
-  authenticate,
-  authorizeRole('TESTER'),
-  async (req, res) => {
-    try {
-      const testCaseId = parseInt(req.params.id)
-      const { stepNumber, action, expectedResult } = req.body
-
-      if (!stepNumber || !action || !expectedResult) {
-        return res.status(400).json({
-          message: "stepNumber, action and expectedResult are required"
-        })
-      }
-
-      const step = await prisma.testCaseStep.create({
-        data: {
-          testCaseId,
-          stepNumber,
-          action,
-          expectedResult
-        }
-      })
-
-      res.status(201).json(step)
-
-    } catch (error) {
-      console.error(error)
-      res.status(500).json({ message: "Failed to add step" })
-    }
-  }
-)
-
-//debug
-router.post('/debug', async (req, res) => {
-  try {
-    const test = await prisma.testCase.create({
-      data: {
-        title: "Debug Test",
-        module: "Auth",
-        createdBy: 1
-      }
-    })
-    res.json(test)
-  } catch (e) {
-    console.error(e)
-    res.json({ error: e.message })
+    console.error("CLONE ERROR:", err)
+    res.status(500).json({ message: 'Clone failed' })
   }
 })
 

@@ -1,625 +1,145 @@
-const express = require("express");
-const prisma = require("../prisma");
+const express = require("express")
+const prisma = require("../prisma")
+const { authenticate } = require("../middleware/auth")
+const { Parser } = require("json2csv")
+const PDFDocument = require("pdfkit")
 
-const router = express.Router();
-const { authenticate, authorizeRole } = require('../middleware/auth')
+const router = express.Router()
 
-
-router.get("/execution", async (req, res) => {
+/*
+  GET /reports?days=7
+*/
+router.get("/", authenticate, async (req, res) => {
   try {
-    const grouped = await prisma.testExecution.groupBy({
-      by: ["status"],
-      _count: { id: true },
-    });
+    const days = parseInt(req.query.days) || 30
+
+    const fromDate = new Date()
+    fromDate.setDate(fromDate.getDate() - days)
+
+    // 🔐 ROLE-BASED FILTER
+    let whereClause = {
+      createdAt: { gte: fromDate }
+    }
+
+    if (req.user.role === "DEVELOPER") {
+      whereClause.assignedToId = req.user.userId
+    }
+
+    if (req.user.role === "TESTER") {
+      whereClause.createdById = req.user.userId
+    }
+
+    const bugs = await prisma.bug.findMany({
+      where: whereClause
+    })
 
     const summary = {
-      total: 0,
-      passed: 0,
-      failed: 0,
-      blocked: 0,
-      skipped: 0,
-      passRate: 0,
-    };
-
-    grouped.forEach((item) => {
-      summary.total += item._count.id;
-
-      if (item.status === "PASS") summary.passed = item._count.id;
-      if (item.status === "FAIL") summary.failed = item._count.id;
-      if (item.status === "BLOCKED") summary.blocked = item._count.id;
-      if (item.status === "SKIPPED") summary.skipped = item._count.id;
-    });
-
-    summary.passRate =
-      summary.total > 0
-        ? Number(((summary.passed / summary.total) * 100).toFixed(2))
-        : 0;
-
-        // Breakdown by Tester
-const testerGroup = await prisma.testExecution.groupBy({
-  by: ["executedBy"],
-  _count: { id: true },
-});
-
-// Get tester names
-const testerIds = testerGroup.map(t => t.executedBy);
-
-const testers = await prisma.user.findMany({
-  where: {
-    id: { in: testerIds }
-  },
-  select: {
-    id: true,
-    email: true
-  }
-});
-
-// Create map
-const testerMap = {};
-testers.forEach(t => {
-  testerMap[t.id] = t.email;
-});
-
-// Final formatted result
-const byTester = testerGroup.map(t => ({
-  testerId: t.executedBy,
-  name: testerMap[t.executedBy] || "Unknown",
-  count: t._count.id
-}));
-
-// Execution Trend (Date-wise)
-const executions = await prisma.testExecution.findMany({
-  select: {
-    executedAt: true
-  }
-});
-
-const trendMap = {};
-
-executions.forEach(exec => {
-  const date = exec.executedAt.toISOString().split("T")[0];
-
-  if (!trendMap[date]) {
-    trendMap[date] = 0;
-  }
-
-  trendMap[date]++;
-});
-
-const trend = Object.entries(trendMap).map(([date, count]) => ({
-  date,
-  count
-}));
-
-// Execution by Module
-const executionsWithModule = await prisma.testExecution.findMany({
-  include: {
-    testcase: {
-      select: {
-        module: true
-      }
+      total: bugs.length,
+      open: bugs.filter(b => b.status === "OPEN").length,
+      inProgress: bugs.filter(b => b.status === "IN_PROGRESS").length,
+      fixed: bugs.filter(b => b.status === "FIXED").length
     }
-  }
-});
 
-const moduleMap = {};
-
-executionsWithModule.forEach(exec => {
-  const module = exec.testcase.module;
-
-  if (!moduleMap[module]) {
-    moduleMap[module] = 0;
-  }
-
-  moduleMap[module]++;
-});
-
-const byModule = Object.entries(moduleMap).map(([module, count]) => ({
-  module,
-  count
-}));
-
-// Failed Test Case Details
-const failedExecutions = await prisma.testExecution.findMany({
-  where: { status: "FAIL" },
-  include: {
-    testcase: {
-      select: {
-        id: true,
-        title: true,
-        module: true
-      }
-    },
-    tester: {
-      select: {
-        email: true
-      }
-    }
-  },
-  orderBy: { executedAt: "desc" }
-});
-
-const failedDetails = failedExecutions.map(exec => ({
-  executionId: exec.id,
-  testcaseId: exec.testcase.id,
-  title: exec.testcase.title,
-  module: exec.testcase.module,
-  executedBy: exec.tester.email,
-  executedAt: exec.executedAt
-}));
-
-    return res.json({
-  summary,
-  byTester,
-  trend,
-  byModule,
-  failedDetails
-});
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-//get bug reports
-// GET /reports/bugs
-router.get("/bugs", authenticate, async (req, res) => {
-  try {
-
-    // 1️⃣ Bugs by Status
-    const byStatusRaw = await prisma.bug.groupBy({
-      by: ["status"],
-      _count: { id: true }
-    });
-
-    const byStatus = byStatusRaw.map(b => ({
-      status: b.status,
-      count: b._count.id
-    }));
-
-    // 2️⃣ Bugs by Severity
-    const bySeverityRaw = await prisma.bug.groupBy({
-      by: ["severity"],
-      _count: { id: true }
-    });
-
-    const bySeverity = bySeverityRaw.map(b => ({
-      severity: b.severity,
-      count: b._count.id
-    }));
-
-    // 3️⃣ Bugs by Priority
-    const byPriorityRaw = await prisma.bug.groupBy({
+    const priorityChart = await prisma.bug.groupBy({
       by: ["priority"],
-      _count: { id: true }
-    });
+      _count: { priority: true },
+      where: whereClause
+    })
 
-    const byPriority = byPriorityRaw.map(b => ({
-      priority: b.priority,
-      count: b._count.id
-    }));
+    const severityChart = await prisma.bug.groupBy({
+      by: ["severity"],
+      _count: { severity: true },
+      where: whereClause
+    })
 
-    // 4️⃣ Bugs by Developer
-    const byDevRaw = await prisma.bug.groupBy({
-      by: ["assignedToId"],
-      _count: { id: true }
-    });
-
-    const devIds = byDevRaw.map(b => b.assignedToId).filter(Boolean);
-
-    const developers = await prisma.user.findMany({
-      where: { id: { in: devIds } },
-      select: { id: true, email: true }
-    });
-
-    const devMap = {};
-    developers.forEach(d => devMap[d.id] = d.email);
-
-    const byDeveloper = byDevRaw.map(b => ({
-      developerId: b.assignedToId,
-      name: devMap[b.assignedToId] || "Unassigned",
-      count: b._count.id
-    }));
-
-    // Bug Aging
-const openBugs = await prisma.bug.findMany({
-  where: {
-    status: { notIn: ["CLOSED"] }
-  },
-  select: {
-    id: true,
-    createdAt: true,
-    status: true
-  }
-});
-
-const aging = openBugs.map(bug => {
-  const age = Math.floor(
-    (new Date() - new Date(bug.createdAt)) /
-    (1000 * 60 * 60 * 24)
-  );
-
-  return {
-    bugId: bug.id,
-    status: bug.status,
-    ageInDays: age
-  };
-});
-
-// Bug Trend (Created per day)
-const bugTrendRaw = await prisma.bug.findMany({
-  select: { createdAt: true }
-});
-
-const trendMap = {};
-
-bugTrendRaw.forEach(bug => {
-  const date = bug.createdAt.toISOString().split("T")[0];
-
-  if (!trendMap[date]) {
-    trendMap[date] = 0;
-  }
-
-  trendMap[date]++;
-});
-
-const trend = Object.entries(trendMap).map(([date, count]) => ({
-  date,
-  count
-}));
-
-// Resolution Time Metrics
-const resolvedBugs = await prisma.bug.findMany({
-  where: {
-    resolvedAt: { not: null }
-  },
-  select: {
-    createdAt: true,
-    resolvedAt: true
-  }
-});
-
-let totalResolutionTime = 0;
-
-resolvedBugs.forEach(bug => {
-  const resolutionTime =
-    (new Date(bug.resolvedAt) - new Date(bug.createdAt)) /
-    (1000 * 60 * 60 * 24);
-
-  totalResolutionTime += resolutionTime;
-});
-
-const avgResolutionTime =
-  resolvedBugs.length > 0
-    ? Number((totalResolutionTime / resolvedBugs.length).toFixed(2))
-    : 0;
-
-    
     res.json({
-      byStatus,
-      bySeverity,
-      byPriority,
-      byDeveloper,
-      aging,
-      trend,
-      avgResolutionTime,
-    });
+      summary,
+      priorityChart,
+      severityChart
+    })
 
-    
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to generate bug report" });
+    console.error(error)
+    res.status(500).json({ message: "Failed to fetch reports" })
   }
-});
+})
 
-router.get("/developer-performance", authenticate, async (req, res) => {
+/*
+  GET /reports/export-csv
+*/
+router.get("/export-csv", authenticate, async (req, res) => {
   try {
+    let whereClause = {}
 
-    const developers = await prisma.user.findMany({
-      where: { role: "DEVELOPER" },
-      select: { id: true, email: true }
-    });
-
-    const performance = [];
-
-    for (const dev of developers) {
-
-      const assigned = await prisma.bug.count({
-        where: { assignedToId: dev.id }
-      });
-
-      const resolvedBugs = await prisma.bug.findMany({
-        where: {
-          assignedToId: dev.id,
-          resolvedAt: { not: null }
-        },
-        select: {
-          createdAt: true,
-          resolvedAt: true
-        }
-      });
-
-      const resolvedCount = resolvedBugs.length;
-
-      let totalResolutionTime = 0;
-
-      resolvedBugs.forEach(bug => {
-        const resolutionTime =
-          (new Date(bug.resolvedAt) - new Date(bug.createdAt)) /
-          (1000 * 60 * 60 * 24);
-
-        totalResolutionTime += resolutionTime;
-      });
-
-      const avgResolutionTime =
-        resolvedCount > 0
-          ? Number((totalResolutionTime / resolvedCount).toFixed(2))
-          : 0;
-
-      const reopenedCount = await prisma.bug.count({
-        where: {
-          assignedToId: dev.id,
-          status: "REOPENED"
-        }
-      });
-
-      const reopenRate =
-        resolvedCount > 0
-          ? Number(((reopenedCount / resolvedCount) * 100).toFixed(2))
-          : 0;
-
-      const fixQualityScore = 100 - reopenRate;
-
-      performance.push({
-        developerId: dev.id,
-        name: dev.email,
-        bugsAssigned: assigned,
-        bugsResolved: resolvedCount,
-        avgResolutionTime,
-        reopenRate,
-        fixQualityScore
-      });
+    if (req.user.role === "DEVELOPER") {
+      whereClause.assignedToId = req.user.userId
     }
 
-    res.json(performance);
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to generate developer report" });
-  }
-});
-
-router.get("/tester-performance", authenticate, async (req, res) => {
-  try {
-
-    // Get all testers
-    const testers = await prisma.user.findMany({
-      where: { role: "TESTER" },
-      select: { id: true, email: true }
-    });
-
-    const performance = [];
-
-    for (const tester of testers) {
-
-      // Total executions
-      const executions = await prisma.testExecution.findMany({
-        where: { executedBy: tester.id },
-        select: {
-          testcaseId: true,
-          duration: true
-        }
-      });
-
-      const totalExecuted = executions.length;
-
-      // Unique test cases executed (coverage)
-      const uniqueTestcases = new Set(
-        executions.map(e => e.testcaseId)
-      );
-
-      const coverageCount = uniqueTestcases.size;
-
-      // Average execution duration (efficiency)
-      const durations = executions
-        .map(e => e.duration)
-        .filter(Boolean);
-
-      const avgDuration =
-        durations.length > 0
-          ? Number(
-              (
-                durations.reduce((a, b) => a + b, 0) /
-                durations.length
-              ).toFixed(2)
-            )
-          : 0;
-
-      // Bugs reported
-      const bugsReported = await prisma.bug.count({
-        where: { createdById: tester.id }
-      });
-
-      // Bug detection rate
-      const bugDetectionRate =
-        totalExecuted > 0
-          ? Number(((bugsReported / totalExecuted) * 100).toFixed(2))
-          : 0;
-
-      performance.push({
-        testerId: tester.id,
-        name: tester.email,
-        testCasesExecuted: totalExecuted,
-        coverage: coverageCount,
-        avgExecutionDurationSeconds: avgDuration,
-        bugsReported,
-        bugDetectionRate
-      });
+    if (req.user.role === "TESTER") {
+      whereClause.createdById = req.user.userId
     }
 
-    res.json(performance);
+    const bugs = await prisma.bug.findMany({
+      where: whereClause
+    })
+
+    const parser = new Parser()
+    const csv = parser.parse(bugs)
+
+    res.header("Content-Type", "text/csv")
+    res.attachment("bug-report.csv")
+    res.send(csv)
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to generate tester report" });
+    console.error(error)
+    res.status(500).json({ message: "CSV export failed" })
   }
-});
+})
 
-const { Parser } = require("json2csv");
-
-router.get("/export/execution/csv", authenticate, async (req, res) => {
+/*
+  GET /reports/export-pdf
+*/
+router.get("/export-pdf", authenticate, async (req, res) => {
   try {
-    const executions = await prisma.testExecution.findMany({
-      include: {
-        testcase: { select: { title: true, module: true } },
-        tester: { select: { email: true } }
-      }
-    });
+    let whereClause = {}
 
-    const formatted = executions.map(e => ({
-      ExecutionID: e.id,
-      TestCase: e.testcase.title,
-      Module: e.testcase.module,
-      Tester: e.tester.email,
-      Status: e.status,
-      ExecutedAt: e.executedAt
-    }));
+    if (req.user.role === "DEVELOPER") {
+      whereClause.assignedToId = req.user.userId
+    }
 
-    const parser = new Parser();
-    const csv = parser.parse(formatted);
+    if (req.user.role === "TESTER") {
+      whereClause.createdById = req.user.userId
+    }
 
-    res.header("Content-Type", "text/csv");
-    res.attachment("execution-report.csv");
-    return res.send(csv);
+    const bugs = await prisma.bug.findMany({
+      where: whereClause
+    })
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "CSV export failed" });
-  }
-});
+    const doc = new PDFDocument()
 
-const ExcelJS = require("exceljs");
-
-router.get("/export/execution/excel", authenticate, async (req, res) => {
-  try {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Execution Report");
-
-    sheet.columns = [
-      { header: "Execution ID", key: "id" },
-      { header: "Test Case", key: "title" },
-      { header: "Module", key: "module" },
-      { header: "Tester", key: "tester" },
-      { header: "Status", key: "status" },
-      { header: "Executed At", key: "executedAt" }
-    ];
-
-    const executions = await prisma.testExecution.findMany({
-      include: {
-        testcase: true,
-        tester: true
-      }
-    });
-
-    executions.forEach(e => {
-      sheet.addRow({
-        id: e.id,
-        title: e.testcase.title,
-        module: e.testcase.module,
-        tester: e.tester.email,
-        status: e.status,
-        executedAt: e.executedAt
-      });
-    });
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
+    res.setHeader("Content-Type", "application/pdf")
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=execution-report.xlsx"
-    );
+      "attachment; filename=bug-report.pdf"
+    )
 
-    await workbook.xlsx.write(res);
-    res.end();
+    doc.pipe(res)
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Excel export failed" });
-  }
-});
+    doc.fontSize(18).text("Bug Report Summary", { align: "center" })
+    doc.moveDown()
 
-const PDFDocument = require("pdfkit");
-
-router.get("/export/execution/pdf", authenticate, async (req, res) => {
-  try {
-    const doc = new PDFDocument();
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", "attachment; filename=execution-report.pdf");
-
-    doc.pipe(res);
-
-    doc.fontSize(18).text("Execution Report", { align: "center" });
-    doc.moveDown();
-
-    const executions = await prisma.testExecution.findMany({
-      include: { testcase: true, tester: true }
-    });
-
-    executions.forEach(e => {
+    bugs.forEach(bug => {
       doc.fontSize(12).text(
-        `ID: ${e.id} | ${e.testcase.title} | ${e.status} | ${e.tester.email}`
-      );
-    });
+        `#${bug.id} - ${bug.title} | ${bug.priority} | ${bug.status}`
+      )
+    })
 
-    doc.end();
+    doc.end()
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "PDF export failed" });
+    console.error(error)
+    res.status(500).json({ message: "PDF export failed" })
   }
-});
+})
 
-const cron = require("node-cron");
-const nodemailer = require("nodemailer");
-
-cron.schedule("0 9 * * 1", async () => {
-  console.log("Running weekly test report...");
-
-  const totalExecutions = await prisma.testExecution.count();
-
-  const passed = await prisma.testExecution.count({
-    where: { status: "PASS" }
-  });
-
-  const totalBugs = await prisma.bug.count();
-
-  const passRate =
-    totalExecutions > 0
-      ? ((passed / totalExecutions) * 100).toFixed(2)
-      : 0;
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-
-  await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: "manager@example.com",
-    subject: "Weekly Test Summary Report",
-    text: `
-Weekly QA Summary
-
-Total Executions: ${totalExecutions}
-Pass Rate: ${passRate}%
-Total Bugs: ${totalBugs}
-    `
-  });
-});
-
-module.exports = router;
+module.exports = router

@@ -1,9 +1,43 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Bugs
+ *   description: Bug management APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
 const { createBugSchema } = require('../validators/bug.schema')
+const { createNotification } = require('../services/notification.service')
 
 const router = express.Router()
+
+/**
+ * @swagger
+ * /bugs:
+ *   post:
+ *     summary: Create a new bug
+ *     tags: [Bugs]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               severity:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Bug created successfully
+ */
 
 /*
   CREATE BUG
@@ -48,6 +82,143 @@ router.post(
     }
   }
 )
+
+/**
+ * @swagger
+ * /bugs/{id}/assign:
+ *   patch:
+ *     summary: Assign bug to a developer (Tester only)
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [assignedToId]
+ *             properties:
+ *               assignedToId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Bug assigned successfully
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Bug not found
+ */
+
+/*
+  ASSIGN BUG
+  PATCH /bugs/:id/assign
+*/
+router.patch(
+  "/:id/assign",
+  authenticate,
+  authorizeRole("TESTER"),
+  async (req, res) => {
+    try {
+      const bugId = parseInt(req.params.id)
+      const assignedToId = parseInt(req.body.assignedToId)
+
+      if (!assignedToId) {
+        return res.status(400).json({ message: "assignedToId is required" })
+      }
+
+      // Check bug exists
+      const bug = await prisma.bug.findUnique({
+        where: { id: bugId },
+      })
+
+      if (!bug) {
+        return res.status(404).json({ message: "Bug not found" })
+      }
+
+      // Check developer exists and role is DEVELOPER
+      const developer = await prisma.user.findUnique({
+        where: { id: assignedToId },
+      })
+
+      if (!developer || developer.role !== "DEVELOPER") {
+        return res.status(400).json({
+          message: "Assigned user must be a valid developer",
+        })
+      }
+
+      // Update bug
+      const updatedBug = await prisma.bug.update({
+        where: { id: bugId },
+        data: { assignedToId },
+      })
+
+      // 🔔 Create notification
+      await createNotification({
+        userId: assignedToId,
+        type: "BUG_ASSIGNED",
+        title: "New Bug Assigned",
+        message: `Bug #${updatedBug.id} has been assigned to you`,
+        relatedId: updatedBug.id.toString(),
+        relatedType: "BUG",
+      })
+
+      res.json(updatedBug)
+
+    } catch (error) {
+      console.error(error)
+      res.status(500).json({ message: "Failed to assign bug" })
+    }
+  }
+)
+
+/**
+ * @swagger
+ * /bugs/{id}/status:
+ *   patch:
+ *     summary: Update bug status (Workflow controlled)
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [NEW, OPEN, IN_PROGRESS, FIXED, VERIFIED, REOPENED, CLOSED, WONT_FIX, DUPLICATE]
+ *               fixNotes:
+ *                 type: string
+ *               commitHash:
+ *                 type: string
+ *               branchName:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Bug status updated
+ *       400:
+ *         description: Invalid status transition
+ *       403:
+ *         description: Unauthorized action
+ *       404:
+ *         description: Bug not found
+ */
 
 /*
   UPDATE BUG STATUS
@@ -119,6 +290,18 @@ router.patch(
         data: updateData
       })
 
+      // 🔔 Notify tester when bug marked FIXED
+if (status === "FIXED") {
+  await createNotification({
+    userId: bug.createdById, // original tester
+    type: "BUG_FIXED",
+    title: "Bug Ready for Re-test",
+    message: `Bug ${updatedBug.bugId} has been marked as FIXED`,
+    relatedId: updatedBug.id.toString(),
+    relatedType: "BUG",
+  })
+}
+
       res.json(updatedBug)
 
     } catch (error) {
@@ -127,6 +310,33 @@ router.patch(
     }
   }
 )
+
+/**
+ * @swagger
+ * /bugs/my:
+ *   get:
+ *     summary: Get bugs assigned to current developer
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [priority, createdAt]
+ *     responses:
+ *       200:
+ *         description: List of assigned bugs
+ */
 
 /*
   GET MY ASSIGNED BUGS (Developer Dashboard)
@@ -187,6 +397,35 @@ router.get(
   }
 )
 
+/**
+ * @swagger
+ * /bugs/{id}/comments:
+ *   post:
+ *     summary: Add comment to a bug
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Comment added successfully
+ */
+
 /*
   POST /bugs/:id/comments
 */
@@ -207,6 +446,34 @@ router.post('/:id/comments', authenticate, async (req, res) => {
       }
     })
 
+    // 🔔 Notify other party about new comment
+const bug = await prisma.bug.findUnique({
+  where: { id: bugId }
+})
+
+let notifyUserId = null
+
+// If commenter is developer → notify tester
+if (req.user.role === "DEVELOPER") {
+  notifyUserId = bug.createdById
+}
+
+// If commenter is tester → notify assigned developer
+if (req.user.role === "TESTER" && bug.assignedToId) {
+  notifyUserId = bug.assignedToId
+}
+
+if (notifyUserId && notifyUserId !== req.user.userId) {
+  await createNotification({
+    userId: notifyUserId,
+    type: "BUG_COMMENT",
+    title: "New Comment on Bug",
+    message: `New comment added on ${bug.bugId}`,
+    relatedId: bug.id.toString(),
+    relatedType: "BUG",
+  })
+}
+
     res.status(201).json(comment)
 
   } catch (error) {
@@ -214,6 +481,25 @@ router.post('/:id/comments', authenticate, async (req, res) => {
     res.status(500).json({ message: "Failed to add comment" })
   }
 })
+
+/**
+ * @swagger
+ * /bugs/{id}/comments:
+ *   get:
+ *     summary: Get comments for a bug
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of comments
+ */
 
 /*
   GET /bugs/:id/comments
@@ -243,6 +529,36 @@ router.get('/:id/comments', authenticate, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch comments" })
   }
 })
+
+/**
+ * @swagger
+ * /bugs/comments/{commentId}:
+ *   patch:
+ *     summary: Edit a comment (within 5 minutes)
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Comment updated
+ *       403:
+ *         description: Not allowed
+ */
 
 /*
   PATCH /bugs/comments/:commentId
@@ -285,6 +601,27 @@ router.patch('/comments/:commentId', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/comments/{commentId}:
+ *   delete:
+ *     summary: Delete a comment (within 5 minutes)
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comment deleted
+ *       403:
+ *         description: Not allowed
+ */
+
 /*
   DELETE /bugs/comments/:commentId
 */
@@ -321,6 +658,31 @@ router.delete('/comments/:commentId', authenticate, async (req, res) => {
   } catch (error) {
     console.error(error)
     res.status(500).json({ message: "Failed to delete comment" })
+  }
+})
+
+router.get('/reported', authenticate, async (req, res) => {
+  try {
+    const bugs = await prisma.bug.findMany({
+      where: {
+        createdById: req.user.userId
+      },
+      include: {
+        assignedTo: {
+          select: {
+            id: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json(bugs)
+
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ message: "Failed to fetch bugs" })
   }
 })
 

@@ -1,8 +1,39 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Executions
+ *   description: Test execution workflow
+ */
+
 const express = require('express');
 const prisma = require('../prisma');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /executions/{testCaseId}/start:
+ *   post:
+ *     summary: Start execution for a test case
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: testCaseId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the test case to execute
+ *     responses:
+ *       200:
+ *         description: Execution started successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to start execution
+ */
 
 /*
   START EXECUTION
@@ -45,6 +76,42 @@ router.post('/:testCaseId/start', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /executions/steps/{stepId}:
+ *   patch:
+ *     summary: Update execution step result
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: stepId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Execution step ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               stepStatus:
+ *                 type: string
+ *                 enum: [PASS, FAIL, BLOCKED, SKIPPED]
+ *               actualResult:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Step updated successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to update step
+ */
+
 /*
   UPDATE STEP RESULT
   PATCH /executions/steps/:stepId
@@ -69,6 +136,30 @@ router.patch('/steps/:stepId', authenticate, async (req, res) => {
     res.status(500).json({ message: "Failed to update step" });
   }
 });
+
+/**
+ * @swagger
+ * /executions/{id}/complete:
+ *   patch:
+ *     summary: Complete execution and calculate final result
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Execution ID
+ *     responses:
+ *       200:
+ *         description: Execution completed successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to complete execution
+ */
 
 /*
   COMPLETE EXECUTION

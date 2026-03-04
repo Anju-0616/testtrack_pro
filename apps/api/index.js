@@ -1,13 +1,10 @@
 require("dotenv").config();
 
+console.log(require.resolve("./src/config/swagger"));
 const express = require("express");
 const cors = require("cors");
 
 const app = express();
-
-const reportsRoutes = require("./src/routes/reports.routes");
-
-app.use("/reports", reportsRoutes);
 
 app.use(cors({
   origin: "http://localhost:5173"
@@ -25,7 +22,7 @@ const authRoutes = require("./src/routes/auth");
 app.use("/auth", authRoutes);
 
 const testcaseRoutes = require("./src/routes/testcase");
-app.use("/testcases", testcaseRoutes);
+app.use("/test-cases", testcaseRoutes);
 
 const bugRoutes = require("./src/routes/bug.routes");
 app.use("/bugs", bugRoutes);
@@ -35,6 +32,18 @@ app.use("/executions", executionRoutes);
 
 const dashboardRoutes = require("./src/routes/dashboard.routes");
 app.use("/dashboard", dashboardRoutes);
+
+const reportsRoutes = require("./src/routes/reports.routes");
+app.use("/reports", reportsRoutes);
+
+const usersRoutes = require("./src/routes/users")
+app.use("/users", usersRoutes)
+
+// ✅ Swagger
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./src/config/swagger");
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
