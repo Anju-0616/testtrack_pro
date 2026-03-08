@@ -7,152 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  email                   String            @unique
-  password                String
-  name                    String?
-  id                      Int               @id @default(autoincrement())
-  role                    Role              @default(TESTER)
-  isVerified              Boolean           @default(false)
-  verificationToken       String?
-  verificationTokenExpiry DateTime?
-  resetToken              String?
-  resetTokenExpiry        DateTime?
-  refreshToken            String?
-  assignedBugs            Bug[]             @relation("AssignedBugs")
-  reportedBugs            Bug[]             @relation("ReportedBugs")
-  bugComment              BugComment[]
-  passwordHistory         PasswordHistory[]
-  passwordResets          PasswordReset[]
-  refreshTokens           RefreshToken[]
-  executions              TestExecution[]
-  dashboardLayout         String?
-  notifications           Notification[]
-  assignedTestCases       TestCase[]        @relation("AssignedTestCases")
-}
-
-model TestCase {
-  title        String
-  description  String?
-  priority     Priority        @default(MEDIUM)
-  status       Status          @default(DRAFT)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  createdBy    Int
-  id           Int             @id @default(autoincrement())
-  isDeleted    Boolean         @default(false)
-  module       String
-  assignedToId Int?
-  assignedTo   User?           @relation("AssignedTestCases", fields: [assignedToId], references: [id])
-  bugs         Bug[]
-  steps        TestCaseStep[]
-  executions   TestExecution[]
-}
-
-model PasswordHistory {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  password  String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  userId    Int
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model PasswordReset {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  userId    Int
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model TestExecution {
-  id             Int             @id @default(autoincrement())
-  testcaseId     Int
-  executedBy     Int
-  status         String
-  executedAt     DateTime        @default(now())
-  startedAt      DateTime?
-  completedAt    DateTime?
-  duration       Int?
-  executionSteps ExecutionStep[]
-  tester         User            @relation(fields: [executedBy], references: [id])
-  testcase       TestCase        @relation(fields: [testcaseId], references: [id], onDelete: Cascade)
-}
-
-model Bug {
-  id               Int          @id @default(autoincrement())
-  bugId            String       @unique
-  title            String
-  description      String
-  stepsToReproduce String
-  expectedBehavior String
-  actualBehavior   String
-  severity         Severity
-  priority         BugPriority
-  status           BugStatus    @default(NEW)
-  environment      String?
-  affectedVersion  String?
-  fixNotes         String?
-  commitHash       String?
-  branchName       String?
-  resolvedAt       DateTime?
-  assignedToId     Int?
-  testCaseId       Int?
-  createdById      Int
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  assignedTo       User?        @relation("AssignedBugs", fields: [assignedToId], references: [id])
-  createdBy        User         @relation("ReportedBugs", fields: [createdById], references: [id])
-  testCase         TestCase?    @relation(fields: [testCaseId], references: [id])
-  Comment          BugComment[]
-}
-
-model BugComment {
-  id        Int      @id @default(autoincrement())
-  content   String
-  bugId     Int
-  userId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model ExecutionStep {
-  id             Int                  @id @default(autoincrement())
-  executionId    Int
-  testCaseStepId Int
-  actualResult   String?
-  stepStatus     ExecutionStepStatus?
-  execution      TestExecution        @relation(fields: [executionId], references: [id], onDelete: Cascade)
-  testCaseStep   TestCaseStep         @relation(fields: [testCaseStepId], references: [id])
-}
-
-model TestCaseStep {
-  id             Int             @id @default(autoincrement())
-  testCaseId     Int
-  stepNumber     Int
-  action         String
-  expectedResult String
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  executionSteps ExecutionStep[]
-  testCase       TestCase        @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
-}
+// ─────────────────────────────────────────
+//  ENUMS
+// ─────────────────────────────────────────
 
 enum Role {
   TESTER
   DEVELOPER
+}
+
+enum ProjectRole {
+  OWNER
+  MEMBER
 }
 
 enum Priority {
@@ -164,16 +30,36 @@ enum Priority {
 
 enum Status {
   DRAFT
-  READY
+  READY_FOR_REVIEW
+  APPROVED
+  DEPRECATED
   ARCHIVED
 }
 
 enum Severity {
-  BLOCKER
-  CRITICAL
-  MAJOR
-  MINOR
   TRIVIAL
+  MINOR
+  MAJOR
+  CRITICAL
+  BLOCKER
+}
+
+enum TestType {
+  FUNCTIONAL
+  REGRESSION
+  SMOKE
+  INTEGRATION
+  UAT
+  PERFORMANCE
+  SECURITY
+  USABILITY
+}
+
+enum AutomationStatus {
+  NOT_AUTOMATED
+  IN_PROGRESS
+  AUTOMATED
+  CANNOT_AUTOMATE
 }
 
 enum BugPriority {
@@ -202,6 +88,361 @@ enum ExecutionStepStatus {
   SKIPPED
 }
 
+enum ExecutionStatus {
+  IN_PROGRESS
+  PASSED
+  FAILED
+  BLOCKED
+  SKIPPED
+}
+
+enum TestRunStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  ABORTED
+}
+
+enum StepStatus {
+  PENDING
+  PASS
+  FAIL
+  BLOCKED
+  SKIPPED
+}
+
+// ─────────────────────────────────────────
+//  USER
+// ─────────────────────────────────────────
+
+model User {
+  id                      Int               @id @default(autoincrement())
+  email                   String            @unique
+  password                String
+  name                    String?
+  role                    Role              @default(TESTER)
+  isVerified              Boolean           @default(false)
+  verificationToken       String?
+  verificationTokenExpiry DateTime?
+  resetToken              String?
+  resetTokenExpiry        DateTime?
+  dashboardLayout         String?
+
+  createdTestCases        TestCase[]        @relation("CreatedTestCases")
+  assignedTestCases       TestCase[]        @relation("AssignedTestCases")
+  assignedBugs            Bug[]             @relation("AssignedBugs")
+  reportedBugs            Bug[]             @relation("ReportedBugs")
+  bugComments             BugComment[]
+  passwordHistory         PasswordHistory[]
+  passwordResets          PasswordReset[]
+  refreshTokens           RefreshToken[]
+  executions              TestExecution[]
+  notifications           Notification[]
+  testCaseHistoryEdits    TestCaseHistory[] @relation("HistoryEditor")
+  createdTestRuns         TestRun[]         @relation("TestRunCreator")
+  createdTestSuites       TestSuite[]       @relation("TestSuiteCreator")
+  createdMilestones       Milestone[]       @relation("MilestoneCreator")
+  projectMemberships      ProjectMember[]
+  createdProjects         Project[]         @relation("ProjectCreator")
+}
+
+// ─────────────────────────────────────────
+//  AUTH MODELS
+// ─────────────────────────────────────────
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordHistory {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  password  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────
+//  PROJECT
+// ─────────────────────────────────────────
+
+model Project {
+  id          Int             @id @default(autoincrement())
+  name        String
+  description String?         @db.Text
+  key         String          @unique
+  isArchived  Boolean         @default(false)
+  createdBy   Int
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  creator     User            @relation("ProjectCreator", fields: [createdBy], references: [id])
+  members     ProjectMember[]
+  testCases   TestCase[]
+  bugs        Bug[]
+  testRuns    TestRun[]
+}
+
+model ProjectMember {
+  id        Int         @id @default(autoincrement())
+  projectId Int
+  userId    Int
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ─────────────────────────────────────────
+//  TEST CASE
+// ─────────────────────────────────────────
+
+model TestCase {
+  id                      Int               @id @default(autoincrement())
+  projectId               Int
+  title                   String            @db.VarChar(200)
+  description             String?           @db.Text
+  module                  String
+  priority                Priority          @default(MEDIUM)
+  severity                Severity          @default(MAJOR)
+  type                    TestType          @default(FUNCTIONAL)
+  status                  Status            @default(DRAFT)
+  tags                    String[]          @default([])
+  preconditions           String?           @db.Text
+  testDataRequirements    String?           @db.Text
+  environmentRequirements String?           @db.Text
+  postconditions          String?           @db.Text
+  cleanupSteps            String?           @db.Text
+  automationStatus        AutomationStatus  @default(NOT_AUTOMATED)
+  automationScriptLink    String?
+  estimatedDuration       Int?
+  version                 Int               @default(1)
+  isDeleted               Boolean           @default(false)
+  deletedAt               DateTime?
+  deletedBy               Int?
+  createdBy               Int
+  assignedToId            Int?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  project                 Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator                 User              @relation("CreatedTestCases", fields: [createdBy], references: [id])
+  assignedTo              User?             @relation("AssignedTestCases", fields: [assignedToId], references: [id])
+  steps                   TestCaseStep[]
+  bugs                    Bug[]
+  executions              TestExecution[]
+  history                 TestCaseHistory[]
+  testSuiteCases          TestSuiteCase[]
+
+  @@index([projectId])
+}
+
+model TestCaseStep {
+  id             Int             @id @default(autoincrement())
+  testCaseId     Int
+  stepNumber     Int
+  action         String          @db.Text
+  testData       String?         @db.Text
+  expectedResult String          @db.Text
+  notes          String?         @db.Text
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  testCase       TestCase        @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  stepResults    StepResult[]
+
+  @@index([testCaseId])
+}
+
+model TestCaseHistory {
+  id            Int      @id @default(autoincrement())
+  testCaseId    Int
+  version       Int
+  changedBy     Int
+  changeSummary String   @db.Text
+  snapshot      Json
+  createdAt     DateTime @default(now())
+
+  testCase      TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  editor        User     @relation("HistoryEditor", fields: [changedBy], references: [id])
+
+  @@index([testCaseId])
+}
+
+// ─────────────────────────────────────────
+//  TEST SUITE
+// ─────────────────────────────────────────
+
+model TestSuite {
+  id          Int             @id @default(autoincrement())
+  name        String
+  description String?
+  module      String?
+  parentId    Int?
+  isArchived  Boolean         @default(false)
+  createdBy   Int
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  parent      TestSuite?      @relation("SuiteHierarchy", fields: [parentId], references: [id])
+  children    TestSuite[]     @relation("SuiteHierarchy")
+  testCases   TestSuiteCase[]
+  creator     User            @relation("TestSuiteCreator", fields: [createdBy], references: [id])
+}
+
+model TestSuiteCase {
+  id         Int       @id @default(autoincrement())
+  suiteId    Int
+  testCaseId Int
+  order      Int       @default(0)
+
+  suite      TestSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  testCase   TestCase  @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+
+  @@unique([suiteId, testCaseId])
+}
+
+// ─────────────────────────────────────────
+//  TEST RUN & EXECUTION
+// ─────────────────────────────────────────
+
+model Milestone {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  targetDate  DateTime
+  status      String    @default("ACTIVE")
+  createdBy   Int
+  createdAt   DateTime  @default(now())
+
+  testRuns    TestRun[]
+  creator     User      @relation("MilestoneCreator", fields: [createdBy], references: [id])
+}
+
+model TestRun {
+  id          Int             @id @default(autoincrement())
+  projectId   Int
+  name        String
+  description String?
+  status      TestRunStatus   @default(PLANNED)
+  startDate   DateTime?
+  endDate     DateTime?
+  milestoneId Int?
+  createdBy   Int
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestone   Milestone?      @relation(fields: [milestoneId], references: [id])
+  creator     User            @relation("TestRunCreator", fields: [createdBy], references: [id])
+  executions  TestExecution[]
+
+  @@index([projectId])
+}
+
+model TestExecution {
+  id          Int             @id @default(autoincrement())
+  testCaseId  Int
+  testRunId   Int?
+  executedBy  Int
+  status      ExecutionStatus @default(IN_PROGRESS)
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  timeSpent   Int?
+
+  testCase    TestCase        @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  testRun     TestRun?        @relation(fields: [testRunId], references: [id])
+  tester      User            @relation(fields: [executedBy], references: [id])
+  stepResults StepResult[]
+
+  @@index([testCaseId])
+  @@index([testRunId])
+}
+
+model StepResult {
+  id           Int           @id @default(autoincrement())
+  executionId  Int
+  stepId       Int
+  status       StepStatus    @default(PENDING)
+  actualResult String?       @db.Text
+  notes        String?       @db.Text
+
+  execution    TestExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  step         TestCaseStep  @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, stepId])
+}
+
+// ─────────────────────────────────────────
+//  BUG
+// ─────────────────────────────────────────
+
+model Bug {
+  id               Int          @id @default(autoincrement())
+  projectId        Int
+  bugId            String       @unique
+  title            String
+  description      String       @db.Text
+  stepsToReproduce String       @db.Text
+  expectedBehavior String
+  actualBehavior   String
+  severity         Severity
+  priority         BugPriority
+  status           BugStatus    @default(NEW)
+  environment      String?
+  affectedVersion  String?
+  fixNotes         String?      @db.Text
+  commitHash       String?
+  branchName       String?
+  resolvedAt       DateTime?
+  assignedToId     Int?
+  testCaseId       Int?
+  createdById      Int
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  project          Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTo       User?        @relation("AssignedBugs", fields: [assignedToId], references: [id])
+  createdBy        User         @relation("ReportedBugs", fields: [createdById], references: [id])
+  testCase         TestCase?    @relation(fields: [testCaseId], references: [id])
+  comments         BugComment[]
+
+  @@index([projectId])
+}
+
+model BugComment {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  bugId     Int
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────
+//  NOTIFICATIONS
+// ─────────────────────────────────────────
+
 model Notification {
   id          Int      @id @default(autoincrement())
   userId      Int
@@ -209,11 +450,12 @@ model Notification {
   title       String
   message     String
   relatedId   String?
-  relatedType String? // BUG, TEST_CASE, COMMENT
+  relatedType String?
   isRead      Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, isRead])
 }

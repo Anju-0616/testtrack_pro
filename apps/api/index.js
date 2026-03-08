@@ -7,7 +7,8 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors({
-  origin: "http://localhost:5173"
+  origin: "http://localhost:5173",
+  credentials: true
 }));
 
 app.use(express.json());
@@ -38,6 +39,21 @@ app.use("/reports", reportsRoutes);
 
 const usersRoutes = require("./src/routes/users")
 app.use("/users", usersRoutes)
+
+const notificationRoutes = require("./src/routes/notification.routes");
+app.use("/notifications", notificationRoutes);
+
+const projectRoutes = require("./src/routes/project.routes");  // ← ADD THIS
+app.use("/projects", projectRoutes);
+
+const testSuiteRoutes = require("./src/routes/testsuites.routes");  // check your filename
+app.use("/test-suites", testSuiteRoutes);
+
+const testRunRoutes = require("./src/routes/testrun.routes");
+app.use("/test-runs", testRunRoutes);
+
+const milestoneRoutes = require("./src/routes/milestone.routes");
+app.use("/milestones", milestoneRoutes);
 
 // ✅ Swagger
 const swaggerUi = require("swagger-ui-express");

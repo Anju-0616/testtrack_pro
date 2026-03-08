@@ -41,4 +41,33 @@ router.get("/testers", authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /users:
+ *   get:
+ *     summary: Get all users
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all users
+ */
+router.get("/", authenticate, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id:    true,
+        name:  true,
+        email: true,
+        role:  true
+      }
+    })
+    res.json(users)
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ message: "Failed to fetch users" })
+  }
+})
+
 module.exports = router
