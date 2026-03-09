@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { useNavigate, Link } from "react-router-dom"
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
 export default function Login() {
   const navigate = useNavigate()
   const [email,    setEmail]    = useState("")
@@ -17,7 +19,7 @@ export default function Login() {
     setError("")
 
     try {
-      const res = await fetch("http://localhost:5000/auth/login", {
+      const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -90,11 +92,10 @@ export default function Login() {
 
       <div className="auth-wrap relative w-full max-w-3xl mx-4 rounded-3xl shadow-2xl overflow-hidden flex" style={{minHeight: 480}}>
 
-        {/* ── LEFT PANEL ── */}
+        {/* LEFT PANEL */}
         <div className="panel-left relative flex flex-col items-center justify-center px-10 py-16 text-white" style={{width: "42%", minWidth: 220}}>
           <div className="corner-red" />
           <div className="corner-yellow" />
-
           <div className="mb-8 flex items-center gap-2 z-10">
             <div className="w-8 h-8 bg-white/30 rounded-lg flex items-center justify-center">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
@@ -103,66 +104,47 @@ export default function Login() {
             </div>
             <span className="auth-title font-bold text-lg tracking-wide">TestTrack</span>
           </div>
-
           <h2 className="auth-title text-3xl font-bold text-center z-10 mb-4 leading-tight">
             Welcome<br />Back!
           </h2>
           <p className="text-white/75 text-sm text-center z-10 leading-relaxed mb-10">
             To stay connected, please<br />login with your account
           </p>
-
-          <Link
-            to="/register"
-            className="z-10 border-2 border-white text-white rounded-full px-8 py-2.5 text-sm font-semibold hover:bg-white hover:text-emerald-600 transition-all"
-          >
+          <Link to="/register"
+            className="z-10 border-2 border-white text-white rounded-full px-8 py-2.5 text-sm font-semibold hover:bg-white hover:text-emerald-600 transition-all">
             SIGN UP
           </Link>
         </div>
 
-        {/* ── RIGHT PANEL ── */}
+        {/* RIGHT PANEL */}
         <div className="flex-1 bg-white flex flex-col items-center justify-center px-12 py-14">
           <h2 className="auth-title text-2xl font-bold text-gray-800 mb-8">Sign In</h2>
-
           {error && (
             <div className="w-full mb-5 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
               {error}
             </div>
           )}
-
           <div className="w-full space-y-7">
             <div>
-              <input
-                className="input-field"
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-              />
+              <input className="input-field" type="email" placeholder="Email"
+                value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()} />
             </div>
             <div>
-              <input
-                className="input-field"
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-              />
+              <input className="input-field" type="password" placeholder="Password"
+                value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()} />
             </div>
           </div>
-
           <div className="w-full flex justify-end mt-2 mb-8">
             <Link to="/forgot-password" className="text-xs text-gray-400 hover:text-emerald-600 transition">
               Forgot password?
             </Link>
           </div>
-
           <button className="btn-primary" onClick={handleLogin} disabled={loading}>
             {loading ? "Signing in…" : "SIGN IN"}
           </button>
         </div>
-
       </div>
     </div>
   )

@@ -1,0 +1,32 @@
+{
+  "hash": "88b2dda4",
+  "configHash": "b1b1c9e6",
+  "lockfileHash": "829795ed",
+  "browserHash": "65b97e80",
+  "optimized": {
+    "react-router-dom": {
+      "src": "../../../../node_modules/.pnpm/react-router-dom@7.13.0_react-dom@19.2.4_react@19.2.4/node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "b4e0702e",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../../../node_modules/.pnpm/react@19.2.4/node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "e28481e5",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../../../node_modules/.pnpm/react@19.2.4/node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "19f2b3a9",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "react-4qGJQygl": {
+      "file": "react-4qGJQygl.js",
+      "isDynamicEntry": false
+    }
+  }
+}
