@@ -6,11 +6,18 @@ const cors = require("cors");
 
 const app = express();
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://testtrack-pro-pi.vercel.app',
+  process.env.FRONTEND_URL,
+].filter(Boolean)
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://testtrack-pro-j47w.vercel.app'
-  ],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    callback(new Error(`CORS blocked: ${origin}`))
+  },
   credentials: true
 }))
 
@@ -18,7 +25,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
 
-// Routes
 const healthRoutes = require("./src/routes/health.routes");
 app.use("/", healthRoutes);
 
@@ -46,10 +52,10 @@ app.use("/users", usersRoutes)
 const notificationRoutes = require("./src/routes/notification.routes");
 app.use("/notifications", notificationRoutes);
 
-const projectRoutes = require("./src/routes/project.routes");  // ← ADD THIS
+const projectRoutes = require("./src/routes/project.routes");
 app.use("/projects", projectRoutes);
 
-const testSuiteRoutes = require("./src/routes/testsuites.routes");  // check your filename
+const testSuiteRoutes = require("./src/routes/testsuites.routes");
 app.use("/test-suites", testSuiteRoutes);
 
 const testRunRoutes = require("./src/routes/testrun.routes");
@@ -58,10 +64,8 @@ app.use("/test-runs", testRunRoutes);
 const milestoneRoutes = require("./src/routes/milestone.routes");
 app.use("/milestones", milestoneRoutes);
 
-// ✅ Swagger
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./src/config/swagger");
-
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.listen(PORT, () => {
