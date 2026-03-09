@@ -2,7 +2,12 @@ const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
 const { createBugSchema } = require('../validators/bug.schema')
-const { createNotification } = require('../services/notification.service')
+const {
+  createNotification,
+  notifyBugTransition,
+  notifyBugAssigned,
+  notifyBugComment
+} = require('../services/notification.service')
 
 const router = express.Router()
 
@@ -18,7 +23,6 @@ async function requireMember(projectId, userId, res) {
 router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
     const parsed = createBugSchema.parse(req.body)
-
     const projectId = parseInt(req.body.projectId)
     if (!projectId) return res.status(400).json({ message: 'projectId is required' })
     if (!await requireMember(projectId, req.user.userId, res)) return
@@ -33,6 +37,11 @@ router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
       data: { bugId, projectId, ...parsed, createdById: req.user.userId }
     })
 
+    // Notify assigned developer immediately on creation (if pre-assigned)
+    if (bug.assignedToId) {
+      await notifyBugAssigned({ bug, assignedToId: bug.assignedToId, actorId: req.user.userId })
+    }
+
     res.status(201).json(bug)
   } catch (error) {
     if (error.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', errors: error.errors })
@@ -46,13 +55,11 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const { projectId, status, priority, search, page = 1, limit = 20 } = req.query
     if (!projectId) return res.status(400).json({ message: 'projectId is required' })
-
     if (!await requireMember(parseInt(projectId), req.user.userId, res)) return
 
     const pageNum  = Math.max(1, parseInt(page))
     const pageSize = Math.min(100, Math.max(1, parseInt(limit)))
-
-    const where = { projectId: parseInt(projectId) }
+    const where    = { projectId: parseInt(projectId) }
     if (status)   where.status   = status
     if (priority) where.priority = priority
     if (search)   where.title    = { contains: search, mode: 'insensitive' }
@@ -66,8 +73,8 @@ router.get('/', authenticate, async (req, res) => {
           assignedTo: { select: { id: true, name: true, email: true } },
         },
         orderBy: { createdAt: 'desc' },
-        skip:    (pageNum - 1) * pageSize,
-        take:    pageSize
+        skip: (pageNum - 1) * pageSize,
+        take: pageSize
       })
     ])
 
@@ -81,7 +88,7 @@ router.get('/', authenticate, async (req, res) => {
 // ── GET SINGLE BUG ────────────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const id = parseInt(req.params.id)
+    const id  = parseInt(req.params.id)
     const bug = await prisma.bug.findUnique({
       where: { id },
       include: {
@@ -106,7 +113,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // ── ASSIGN BUG ────────────────────────────────────────────────────────────────
 router.patch('/:id/assign', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
-    const bugId       = parseInt(req.params.id)
+    const bugId        = parseInt(req.params.id)
     const assignedToId = parseInt(req.body.assignedToId)
     if (!assignedToId) return res.status(400).json({ message: 'assignedToId is required' })
 
@@ -118,7 +125,6 @@ router.patch('/:id/assign', authenticate, authorizeRole('TESTER'), async (req, r
     if (!developer || developer.role !== 'DEVELOPER')
       return res.status(400).json({ message: 'Assigned user must be a valid developer' })
 
-    // Developer must also be a project member
     const devMember = await prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId: bug.projectId, userId: assignedToId } }
     })
@@ -126,11 +132,8 @@ router.patch('/:id/assign', authenticate, authorizeRole('TESTER'), async (req, r
 
     const updatedBug = await prisma.bug.update({ where: { id: bugId }, data: { assignedToId } })
 
-    await createNotification({
-      userId: assignedToId, type: 'BUG_ASSIGNED', title: 'New Bug Assigned',
-      message: `Bug ${updatedBug.bugId} has been assigned to you`,
-      relatedId: updatedBug.id.toString(), relatedType: 'BUG'
-    })
+    // ✅ Notify the assigned developer
+    await notifyBugAssigned({ bug: updatedBug, assignedToId, actorId: req.user.userId })
 
     res.json(updatedBug)
   } catch (error) {
@@ -149,7 +152,6 @@ router.patch('/:id/status', authenticate, async (req, res) => {
     if (!bug) return res.status(404).json({ message: 'Bug not found' })
     if (!await requireMember(bug.projectId, req.user.userId, res)) return
 
-    /** @type {Record<string, string[]>} */
     const validTransitions = {
       NEW:         ['OPEN', 'WONT_FIX', 'DUPLICATE'],
       OPEN:        ['IN_PROGRESS'],
@@ -181,13 +183,13 @@ router.patch('/:id/status', authenticate, async (req, res) => {
 
     const updatedBug = await prisma.bug.update({ where: { id: bugId }, data: updateData })
 
-    if (status === 'FIXED') {
-      await createNotification({
-        userId: bug.createdById, type: 'BUG_FIXED', title: 'Bug Ready for Re-test',
-        message: `Bug ${updatedBug.bugId} has been marked as FIXED`,
-        relatedId: updatedBug.id.toString(), relatedType: 'BUG'
-      })
-    }
+    // ✅ Fire the correct notification(s) for this transition
+    await notifyBugTransition({
+      bug:       { ...bug, id: bugId },
+      newStatus: status,
+      actorId:   req.user.userId,
+      fixNotes
+    })
 
     res.json(updatedBug)
   } catch (error) {
@@ -200,7 +202,7 @@ router.patch('/:id/status', authenticate, async (req, res) => {
 router.get('/my/assigned', authenticate, authorizeRole('DEVELOPER'), async (req, res) => {
   try {
     const { projectId, status, priority } = req.query
-    const where = { assignedToId: req.user.userId } 
+    const where = { assignedToId: req.user.userId }
     if (projectId) where.projectId = parseInt(projectId)
     if (status)    where.status    = status
     if (priority)  where.priority  = priority
@@ -243,7 +245,7 @@ router.get('/my/reported', authenticate, async (req, res) => {
 // ── COMMENTS ──────────────────────────────────────────────────────────────────
 router.post('/:id/comments', authenticate, async (req, res) => {
   try {
-    const bugId = parseInt(req.params.id)
+    const bugId   = parseInt(req.params.id)
     const { content } = req.body
     if (!content) return res.status(400).json({ message: 'Comment cannot be empty' })
 
@@ -255,16 +257,12 @@ router.post('/:id/comments', authenticate, async (req, res) => {
       data: { content, bugId, userId: req.user.userId }
     })
 
-    const notifyUserId = req.user.role === 'DEVELOPER' ? bug.createdById
-      : bug.assignedToId ?? null
-
-    if (notifyUserId && notifyUserId !== req.user.userId) {
-      await createNotification({
-        userId: notifyUserId, type: 'BUG_COMMENT', title: 'New Comment on Bug',
-        message: `New comment added on ${bug.bugId}`,
-        relatedId: bug.id.toString(), relatedType: 'BUG'
-      })
-    }
+    // ✅ Notify the other party about the comment
+    await notifyBugComment({
+      bug,
+      actorId:   req.user.userId,
+      actorRole: req.user.role
+    })
 
     res.status(201).json(comment)
   } catch (error) {
@@ -276,12 +274,12 @@ router.post('/:id/comments', authenticate, async (req, res) => {
 router.get('/:id/comments', authenticate, async (req, res) => {
   try {
     const bugId = parseInt(req.params.id)
-    const bug = await prisma.bug.findUnique({ where: { id: bugId } })
+    const bug   = await prisma.bug.findUnique({ where: { id: bugId } })
     if (!bug) return res.status(404).json({ message: 'Bug not found' })
     if (!await requireMember(bug.projectId, req.user.userId, res)) return
 
     const comments = await prisma.bugComment.findMany({
-      where: { bugId },
+      where:   { bugId },
       include: { user: { select: { id: true, name: true, email: true, role: true } } },
       orderBy: { createdAt: 'asc' }
     })
@@ -313,7 +311,7 @@ router.patch('/comments/:commentId', authenticate, async (req, res) => {
 router.delete('/comments/:commentId', authenticate, async (req, res) => {
   try {
     const commentId = parseInt(req.params.commentId)
-    const comment = await prisma.bugComment.findUnique({ where: { id: commentId } })
+    const comment   = await prisma.bugComment.findUnique({ where: { id: commentId } })
     if (!comment) return res.status(404).json({ message: 'Comment not found' })
     if (comment.userId !== req.user.userId) return res.status(403).json({ message: 'Not your comment' })
     if ((Date.now() - new Date(comment.createdAt).getTime()) / 60000 > 5)
