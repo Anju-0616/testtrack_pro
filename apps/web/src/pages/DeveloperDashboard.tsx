@@ -1,55 +1,32 @@
 import { useEffect, useState } from "react"
-import { NavLink, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import {
-  FolderKanban, LayoutDashboard, ClipboardList,
-  Play, Bug, BarChart2, BugPlay, ShieldAlert,
-  RefreshCw, AlertCircle, CheckCheck, TrendingUp
+  BugPlay, ShieldAlert, RefreshCw, AlertCircle, CheckCheck, TrendingUp
 } from "lucide-react"
 import CounterWidget from "../components/CounterWidget"
 import TableWidget from "../components/TableWidget"
-import NotificationBell from "../pages/Notification"
-import { useAuth } from "../context/AuthContext"
 import api from "../lib/api"
 
-// ─── Nav ──────────────────────────────────────────────────────────────────────
-
-const NAV = [
-  { to: "/projects",            icon: <FolderKanban size={17} />,    label: "All Projects" },
-  { to: "/developer-dashboard", icon: <LayoutDashboard size={17} />, label: "Dashboard" },
-  { to: "/assigned-bugs",       icon: <BugPlay size={17} />,         label: "My Assigned Bugs" },
-  { to: "/bugs",                icon: <Bug size={17} />,             label: "All Bugs" },
-  { to: "/test-cases",          icon: <ClipboardList size={17} />,   label: "Test Cases" },
-  { to: "/test-runs",           icon: <Play size={17} />,            label: "Test Runs" },
-  { to: "/reports",             icon: <BarChart2 size={17} />,       label: "Reports" },
-]
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function DeveloperDashboard() {
-  const navigate     = useNavigate()
-  const { user }     = useAuth()
+  const navigate = useNavigate()
   const [data,    setData]    = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
   const load = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const { data: res } = await api.get("/dashboard/developer")
       setData(res)
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err?.message ?? "Failed to load dashboard")
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
-  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50">
+    <div className="flex items-center justify-center py-24">
       <div className="flex flex-col items-center gap-3 text-emerald-600">
         <RefreshCw size={28} className="animate-spin" />
         <p className="text-sm text-gray-400">Loading dashboard…</p>
@@ -57,22 +34,16 @@ export default function DeveloperDashboard() {
     </div>
   )
 
-  // ── Error ──────────────────────────────────────────────────────────────────
   if (error) return (
-    <div className="h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50">
+    <div className="flex items-center justify-center py-24">
       <div className="text-center">
         <AlertCircle size={32} className="text-red-400 mx-auto mb-3" />
         <p className="text-gray-600 mb-4">{error}</p>
-        <button onClick={load} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700">
-          Retry
-        </button>
+        <button onClick={load} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700">Retry</button>
       </div>
     </div>
   )
 
-  const initials = user?.name?.[0]?.toUpperCase() ?? "?"
-
-  // recentlyFixed: matches data.recentlyFixed[].bugId, .title, .status
   const fixedRows = (data?.recentlyFixed ?? []).map((b: any) => ({
     bugId:  b.bugId  ?? "—",
     title:  b.title  ?? "Untitled",
@@ -80,110 +51,40 @@ export default function DeveloperDashboard() {
   }))
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50">
-
-      {/* ── SIDEBAR ── identical structure to TesterDashboard ──────────────── */}
-      <aside className="w-64 bg-gradient-to-b from-emerald-600 to-teal-700 text-white flex flex-col justify-between py-8 px-5 shadow-xl shrink-0">
-        <div>
-          <div className="flex items-center gap-2.5 mb-10 px-2">
-            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-              <Bug size={16} />
-            </div>
-            <span className="text-lg font-bold tracking-wide">TestTrack</span>
-          </div>
-          <nav className="space-y-1 text-sm">
-            {NAV.map(({ to, icon, label }) => (
-              <NavLink key={to} to={to}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
-                    isActive
-                      ? "bg-white text-emerald-700 font-semibold shadow-sm"
-                      : "text-white/80 hover:bg-white/15 hover:text-white"
-                  }`
-                }
-              >{icon}{label}</NavLink>
-            ))}
-          </nav>
-        </div>
-        <div
-          onClick={() => navigate("/profile")}
-          className="flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer hover:bg-white/15 transition"
-        >
-          <div className="w-9 h-9 rounded-full bg-white text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
-            {initials}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">{user?.name}</p>
-            <p className="text-xs text-white/60">{user?.role}</p>
-          </div>
-        </div>
-      </aside>
-
-      {/* ── MAIN ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-        {/* Topbar — identical to TesterDashboard */}
-        <div className="flex items-center justify-end px-8 py-4 bg-white/80 backdrop-blur border-b border-gray-100 shadow-sm">
-          <NotificationBell />
-        </div>
-
-        <main className="flex-1 overflow-y-auto px-8 py-8">
-
-          {/* Heading */}
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-800">Developer Dashboard</h1>
-            <p className="text-sm text-gray-400 mt-1">Your bug workload at a glance</p>
-          </div>
-
-          {/* Counters — matches: data.counters.assigned, .highPriority, .inProgress, .fixed */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
-              <CounterWidget
-                title="Bugs Assigned"
-                value={data?.counters?.assigned ?? 0}
-                icon={<BugPlay size={18} />}
-                accent="from-emerald-500 to-teal-600"
-              />
-            </div>
-            <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
-              <CounterWidget
-                title="High Priority"
-                value={data?.counters?.highPriority ?? 0}
-                icon={<ShieldAlert size={18} />}
-                accent="from-red-400 to-rose-500"
-              />
-            </div>
-            <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
-              <CounterWidget
-                title="In Progress"
-                value={data?.counters?.inProgress ?? 0}
-                icon={<TrendingUp size={18} />}
-                accent="from-amber-400 to-orange-500"
-              />
-            </div>
-            <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
-              <CounterWidget
-                title="Fixed"
-                value={data?.counters?.fixed ?? 0}
-                icon={<CheckCheck size={18} />}
-                accent="from-blue-400 to-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Recently Fixed — matches: data.recentlyFixed[].bugId, .title, .status */}
-          <TableWidget
-            title="Recently Fixed Bugs"
-            columns={[
-              { header: "Bug ID", accessor: "bugId"  },
-              { header: "Title",  accessor: "title"  },
-              { header: "Status", accessor: "status" },
-            ]}
-            data={fixedRows}
-          />
-
-        </main>
+    <div className="px-8 py-8">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-800">Developer Dashboard</h1>
+        <p className="text-sm text-gray-400 mt-1">Your bug workload at a glance</p>
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
+          <CounterWidget title="Bugs Assigned" value={data?.counters?.assigned ?? 0}
+            icon={<BugPlay size={18} />} accent="from-emerald-500 to-teal-600" />
+        </div>
+        <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
+          <CounterWidget title="High Priority" value={data?.counters?.highPriority ?? 0}
+            icon={<ShieldAlert size={18} />} accent="from-red-400 to-rose-500" />
+        </div>
+        <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
+          <CounterWidget title="In Progress" value={data?.counters?.inProgress ?? 0}
+            icon={<TrendingUp size={18} />} accent="from-amber-400 to-orange-500" />
+        </div>
+        <div onClick={() => navigate("/assigned-bugs")} className="cursor-pointer">
+          <CounterWidget title="Fixed" value={data?.counters?.fixed ?? 0}
+            icon={<CheckCheck size={18} />} accent="from-blue-400 to-indigo-500" />
+        </div>
+      </div>
+
+      <TableWidget
+        title="Recently Fixed Bugs"
+        columns={[
+          { header: "Bug ID", accessor: "bugId"  },
+          { header: "Title",  accessor: "title"  },
+          { header: "Status", accessor: "status" },
+        ]}
+        data={fixedRows}
+      />
     </div>
   )
 }

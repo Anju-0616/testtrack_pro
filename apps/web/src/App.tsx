@@ -26,17 +26,14 @@ import ExecuteTest        from './pages/Executetest'
 import Milestones         from './pages/Milestones'
 import Projects           from './pages/Project'
 import ProjectDetail      from './pages/ProjectDetails'
-import AssignedBugs from './pages/assignedbugs'
-
+import AssignedBugs       from './pages/assignedbugs'
 
 import Layout from './components/Layout'
 
-
-// Redirects to the correct dashboard based on role
 function RoleRedirect() {
   const { user } = useAuth()
   if (user?.role === 'DEVELOPER') return <Navigate to="/developer-dashboard" replace />
-  if (user?.role === 'TESTER')    return <Navigate to="/tester-dashboard"    replace />
+  if (user?.role === 'TESTER')    return <Navigate to="/dashboard"           replace />
   return <Navigate to="/login" replace />
 }
 
@@ -46,7 +43,7 @@ function App() {
       <AuthProvider>
         <Routes>
 
-          {/* Public routes */}
+          {/* ── Public ───────────────────────────────────────────────────── */}
           <Route path="/login"           element={<Login />} />
           <Route path="/register"        element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -54,47 +51,42 @@ function App() {
           <Route path="/verify-email"    element={<VerifyEmail />} />
           <Route path="/logout"          element={<Logout />} />
 
-          {/* Role-based redirect at root and /dashboard */}
-          <Route element={<PrivateRoute />}>
-            <Route path="/"          element={<RoleRedirect />} />
-            <Route path="/dashboard" element={<RoleRedirect />} />
-          </Route>
-
-          {/* Shared protected routes (with Layout) */}
+          {/* ── All protected routes — inside Layout ─────────────────────── */}
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
-              <Route path="/test-cases"                      element={<Testcases />} />
-              <Route path="/test-cases/new"                  element={<TestCaseForm />} />
-              <Route path="/test-cases/:id/edit"             element={<TestCaseForm />} />
-              <Route path="/test-cases/:testCaseId/execute"  element={<ExecutionInterface />} />
-              <Route path="/bugs"                            element={<Bugs />} />
-              <Route path="/bugs/new"                        element={<CreateBug />} />
-              <Route path="/reports"                         element={<Reports />} />
-              <Route path="/notifications"                   element={<Notification />} />
-              <Route path="/settings"                        element={<Settings />} />
-              <Route path="/profile"                         element={<Profile />} />
-              <Route path="/test-suites"                     element={<TestSuites />} />
-              <Route path="/test-runs"                       element={<TestRuns />} />
-              <Route path="/executions"                      element={<ExecuteTest />} />
-              <Route path="/milestones"                      element={<Milestones />} />
-              <Route path="/projects"                        element={<Projects />} />
-              <Route path="/projects/:id"                    element={<ProjectDetail />} />
-              <Route path="/execute/:testCaseId"             element={<ExecuteTest />} />
-              <Route path="/assigned-bugs"                   element={<AssignedBugs />} />
+
+              {/* Root redirects */}
+              <Route path="/"          element={<RoleRedirect />} />
+              <Route path="/dashboard" element={<RoleRedirect />} />
+
+              {/* Dashboards — now inside Layout so NotificationBell works */}
+              <Route path="/developer-dashboard" element={<DeveloperDashboard />} />
+              <Route path="/tester-dashboard"    element={<TesterDashboard />} />
+
+              {/* Shared pages */}
+              <Route path="/test-cases"                     element={<Testcases />} />
+              <Route path="/test-cases/new"                 element={<TestCaseForm />} />
+              <Route path="/test-cases/:id/edit"            element={<TestCaseForm />} />
+              <Route path="/test-cases/:testCaseId/execute" element={<ExecutionInterface />} />
+              <Route path="/bugs"                           element={<Bugs />} />
+              <Route path="/bugs/new"                       element={<CreateBug />} />
+              <Route path="/reports"                        element={<Reports />} />
+              <Route path="/notifications"                  element={<Notification />} />
+              <Route path="/settings"                       element={<Settings />} />
+              <Route path="/profile"                        element={<Profile />} />
+              <Route path="/test-suites"                    element={<TestSuites />} />
+              <Route path="/test-runs"                      element={<TestRuns />} />
+              <Route path="/executions"                     element={<ExecuteTest />} />
+              <Route path="/milestones"                     element={<Milestones />} />
+              <Route path="/projects"                       element={<Projects />} />
+              <Route path="/projects/:id"                   element={<ProjectDetail />} />
+              <Route path="/execute/:testCaseId"            element={<ExecuteTest />} />
+              <Route path="/assigned-bugs"                  element={<AssignedBugs />} />
+
             </Route>
           </Route>
 
-          {/* Developer-only — no Layout (has its own sidebar) */}
-          <Route element={<PrivateRoute roles={['DEVELOPER']} />}>
-            <Route path="/developer-dashboard" element={<DeveloperDashboard />} />
-          </Route>
-
-          {/* Tester-only — no Layout (has its own sidebar) */}
-          <Route element={<PrivateRoute roles={['TESTER']} />}>
-            <Route path="/tester-dashboard" element={<TesterDashboard />} />
-          </Route>
-
-          {/* 403 */}
+          {/* ── 403 ──────────────────────────────────────────────────────── */}
           <Route path="/unauthorized" element={
             <div className="flex items-center justify-center min-h-screen bg-gray-950">
               <div className="text-center">
@@ -105,7 +97,7 @@ function App() {
             </div>
           } />
 
-          {/* 404 */}
+          {/* ── 404 ──────────────────────────────────────────────────────── */}
           <Route path="*" element={
             <div className="flex items-center justify-center min-h-screen bg-gray-950">
               <div className="text-center">
