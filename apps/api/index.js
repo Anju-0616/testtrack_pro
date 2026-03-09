@@ -6,16 +6,16 @@ const cors = require("cors");
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://testtrack-pro-pi.vercel.app',
-  process.env.FRONTEND_URL,
-].filter(Boolean)
-
 app.use(cors({
   origin: (origin, callback) => {
+    // allow no-origin requests (mobile, curl, etc.)
     if (!origin) return callback(null, true)
-    if (allowedOrigins.includes(origin)) return callback(null, true)
+    // allow localhost
+    if (origin.startsWith('http://localhost')) return callback(null, true)
+    // allow ANY vercel.app subdomain
+    if (origin.endsWith('.vercel.app')) return callback(null, true)
+    // allow custom domain from env
+    if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return callback(null, true)
     callback(new Error(`CORS blocked: ${origin}`))
   },
   credentials: true
