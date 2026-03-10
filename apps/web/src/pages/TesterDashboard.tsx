@@ -5,6 +5,7 @@ import {
 } from "lucide-react"
 import CounterWidget from "../components/CounterWidget"
 import TableWidget from "../components/TableWidget"
+import api from "../lib/api"
 
 export default function TesterDashboard() {
   const navigate = useNavigate()
@@ -14,16 +15,11 @@ export default function TesterDashboard() {
 
   const load = async () => {
     setLoading(true); setError(null)
-    const token = localStorage.getItem("accessToken")
-    if (!token) { setError("Not authenticated"); setLoading(false); return }
     try {
-      const res = await fetch("http://localhost:5000/dashboard/tester", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error(`Server error: ${res.status}`)
-      setData(await res.json())
+      const { data: res } = await api.get("/dashboard/tester")
+      setData(res)
     } catch (err: any) {
-      setError(err.message ?? "Failed to load dashboard")
+      setError(err?.response?.data?.message ?? err?.message ?? "Failed to load dashboard")
     } finally { setLoading(false) }
   }
 
