@@ -3,6 +3,13 @@
  * tags:
  *   name: Authentication
  *   description: User authentication & session management
+ *
+ * components:
+ *   securitySchemes:
+ *     bearerAuth:
+ *       type: http
+ *       scheme: bearer
+ *       bearerFormat: JWT
  */
 
 const crypto = require('crypto')
@@ -14,6 +21,43 @@ const prisma = require("../prisma");
 const { sendVerificationEmail } = require("../services/email.service");
 const { authenticate } = require("../middleware/auth");
 
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: John Doe
+ *               email:
+ *                 type: string
+ *                 example: john@example.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *               role:
+ *                 type: string
+ *                 enum: [TESTER, DEVELOPER]
+ *                 example: TESTER
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Missing required fields
+ *       409:
+ *         description: User already exists
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // REGISTER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +109,25 @@ router.post("/register", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   get:
+ *     summary: Verify user email
+ *     tags: [Authentication]
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Email verification token
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // VERIFY EMAIL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +158,36 @@ router.get("/verify-email", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Login user and generate tokens
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: john@example.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Email not verified
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGIN  ✅ FIXED: uses RefreshToken table instead of user.refreshToken field
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,6 +244,30 @@ router.post("/login", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: Refresh access token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: randomrefreshtoken123
+ *     responses:
+ *       200:
+ *         description: New access token generated
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // REFRESH TOKEN  ✅ FIXED: looks up RefreshToken table
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +302,30 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Generate password reset token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: john@example.com
+ *     responses:
+ *       200:
+ *         description: Reset token generated
+ *       400:
+ *         description: Email is required
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // FORGOT PASSWORD
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,6 +347,33 @@ router.post('/forgot-password', async (req, res) => {
   res.json({ message: 'Password reset token generated', resetToken });
 });
 
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - newPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *                 example: NewStrongPassword123
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ *       400:
+ *         description: Invalid or expired token
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // RESET PASSWORD
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,6 +422,27 @@ router.post('/reset-password', async (req, res) => {
   res.json({ message: 'Password reset successful' });
 });
 
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout user and invalidate refresh token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGOUT  ✅ FIXED: deletes from RefreshToken table
 // ─────────────────────────────────────────────────────────────────────────────
@@ -275,6 +464,18 @@ router.post("/logout", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/me:
+ *   delete:
+ *     summary: Delete current user account
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE ACCOUNT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,6 +502,20 @@ router.delete("/me", authenticate, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     summary: Get current user profile
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile returned
+ *       404:
+ *         description: User not found
+ */
 // ─────────────────────────────────────────────────────────────────────────────
 // GET / UPDATE PROFILE
 // ─────────────────────────────────────────────────────────────────────────────

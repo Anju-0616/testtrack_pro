@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Reports
+ *   description: Bug analytics and export reports
+ */
+
 const express = require("express")
 const prisma = require("../prisma")
 const { authenticate } = require("../middleware/auth")
@@ -6,6 +13,50 @@ const PDFDocument = require("pdfkit")
 
 const router = express.Router()
 
+
+/**
+ * @swagger
+ * /reports:
+ *   get:
+ *     summary: Get bug analytics report
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *         description: Number of days to include in report
+ *         example: 7
+ *     responses:
+ *       200:
+ *         description: Bug report summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     open:
+ *                       type: integer
+ *                     inProgress:
+ *                       type: integer
+ *                     fixed:
+ *                       type: integer
+ *                 priorityChart:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 severityChart:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ */
 /*
   GET /reports?days=7
 */
@@ -64,6 +115,22 @@ router.get("/", authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /reports/export-csv:
+ *   get:
+ *     summary: Export bug report as CSV
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: CSV file download
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ */
 /*
   GET /reports/export-csv
 */
@@ -96,6 +163,22 @@ router.get("/export-csv", authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /reports/export-pdf:
+ *   get:
+ *     summary: Export bug report as PDF
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: PDF file download
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ */
 /*
   GET /reports/export-pdf
 */

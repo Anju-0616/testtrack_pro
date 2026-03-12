@@ -1,8 +1,16 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Projects
+ *   description: Project management & membership APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate } = require('../middleware/auth')
 
 const router = express.Router()
+
 
 // ── Helper: check membership ──────────────────────────────────────────────────
 async function requireMember(projectId, userId, res) {
@@ -13,6 +21,37 @@ async function requireMember(projectId, userId, res) {
   return member
 }
 
+/**
+ * @swagger
+ * /projects:
+ *   post:
+ *     summary: Create a new project
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, key]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: QA Automation
+ *               description:
+ *                 type: string
+ *                 example: Automation testing project
+ *               key:
+ *                 type: string
+ *                 example: QA
+ *     responses:
+ *       201:
+ *         description: Project created successfully
+ *       400:
+ *         description: Validation error
+ */
 // ── CREATE PROJECT ────────────────────────────────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
@@ -44,6 +83,18 @@ router.post('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects:
+ *   get:
+ *     summary: Get all projects the user belongs to
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of projects
+ */
 // ── LIST MY PROJECTS ──────────────────────────────────────────────────────────
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -71,6 +122,28 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects/{id}:
+ *   get:
+ *     summary: Get project details
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Project details
+ *       403:
+ *         description: Not a project member
+ *       404:
+ *         description: Project not found
+ */
 // ── GET SINGLE PROJECT ────────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -96,6 +169,36 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects/{id}:
+ *   put:
+ *     summary: Update project details (Owner only)
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Project updated
+ *       403:
+ *         description: Only owner can update
+ */
 // ── UPDATE PROJECT ────────────────────────────────────────────────────────────
 router.put('/:id', authenticate, async (req, res) => {
   try {
@@ -120,6 +223,37 @@ router.put('/:id', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects/{id}/members:
+ *   post:
+ *     summary: Add a member to project (Owner only)
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId]
+ *             properties:
+ *               userId:
+ *                 type: integer
+ *               role:
+ *                 type: string
+ *                 enum: [OWNER, MEMBER]
+ *     responses:
+ *       201:
+ *         description: Member added
+ */
 // ── ADD MEMBER ────────────────────────────────────────────────────────────────
 router.post('/:id/members', authenticate, async (req, res) => {
   try {
@@ -147,6 +281,29 @@ router.post('/:id/members', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects/{id}/members/{userId}:
+ *   delete:
+ *     summary: Remove member from project (Owner only)
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Member removed
+ */
 // ── REMOVE MEMBER ─────────────────────────────────────────────────────────────
 router.delete('/:id/members/:userId', authenticate, async (req, res) => {
   try {
@@ -167,6 +324,24 @@ router.delete('/:id/members/:userId', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /projects/{id}/stats:
+ *   get:
+ *     summary: Get project statistics
+ *     tags: [Projects]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Project statistics
+ */
 // ── GET PROJECT STATS ─────────────────────────────────────────────────────────
 router.get('/:id/stats', authenticate, async (req, res) => {
   try {

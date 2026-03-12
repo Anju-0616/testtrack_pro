@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: TestRuns
+ *   description: Test run planning and execution tracking APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
@@ -14,6 +21,40 @@ async function requireMember(projectId, userId, res) {
   return true
 }
 
+/**
+ * @swagger
+ * /testruns:
+ *   post:
+ *     summary: Create a new test run
+ *     tags: [TestRuns]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, name]
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *               milestoneId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Test run created
+ */
 // ── CREATE TEST RUN ───────────────────────────────────────────────────────────
 router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -45,6 +86,29 @@ router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testruns:
+ *   get:
+ *     summary: Get test runs for a project
+ *     tags: [TestRuns]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PLANNED, IN_PROGRESS, COMPLETED, ABORTED]
+ *     responses:
+ *       200:
+ *         description: List of test runs
+ */
 // ── LIST TEST RUNS (scoped to project) ───────────────────────────────────────
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -81,6 +145,26 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testruns/{id}:
+ *   get:
+ *     summary: Get details of a test run
+ *     tags: [TestRuns]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Test run details
+ *       404:
+ *         description: Test run not found
+ */
 // ── GET SINGLE TEST RUN ───────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -111,6 +195,45 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testruns/{id}:
+ *   put:
+ *     summary: Update a test run
+ *     tags: [TestRuns]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [PLANNED, IN_PROGRESS, COMPLETED, ABORTED]
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *               milestoneId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Test run updated
+ */
 // ── UPDATE TEST RUN ───────────────────────────────────────────────────────────
 router.put('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -142,6 +265,24 @@ router.put('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testruns/{id}:
+ *   delete:
+ *     summary: Delete a test run
+ *     tags: [TestRuns]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Test run deleted
+ */
 // ── DELETE TEST RUN ───────────────────────────────────────────────────────────
 router.delete('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {

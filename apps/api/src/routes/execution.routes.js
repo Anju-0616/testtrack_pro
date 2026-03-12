@@ -1,9 +1,48 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Executions
+ *   description: Execution workflow APIs
+ * 
+ */
 const express = require('express')
 const prisma  = require('../prisma')
 const { authenticate } = require('../middleware/auth')
 
 const router = express.Router()
 
+/**
+ * @swagger
+ * /executions:
+ *   post:
+ *     summary: Start a test execution
+ *     description: Creates a new test execution and pre-generates step results for the test case
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - testCaseId
+ *             properties:
+ *               testCaseId:
+ *                 type: integer
+ *                 example: 1
+ *               testRunId:
+ *                 type: integer
+ *                 example: 5
+ *     responses:
+ *       201:
+ *         description: Execution started successfully
+ *       400:
+ *         description: testCaseId is required
+ *       404:
+ *         description: Test case not found
+ */
 // ── START / CREATE EXECUTION ──────────────────────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
@@ -51,6 +90,43 @@ router.post('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /executions/{executionId}/steps/{stepId}:
+ *   put:
+ *     summary: Update step result during execution
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: executionId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: stepId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 example: PASS
+ *               actualResult:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Step result updated
+ */
 // ── UPDATE STEP RESULT ────────────────────────────────────────────────────────
 router.put('/:executionId/steps/:stepId', authenticate, async (req, res) => {
   try {
@@ -71,6 +147,35 @@ router.put('/:executionId/steps/:stepId', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /executions/{id}/complete:
+ *   put:
+ *     summary: Complete a test execution
+ *     description: Calculates overall execution result based on step results
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               timeSpent:
+ *                 type: integer
+ *                 example: 120
+ *     responses:
+ *       200:
+ *         description: Execution completed successfully
+ */
 // ── COMPLETE EXECUTION ────────────────────────────────────────────────────────
 router.put('/:id/complete', authenticate, async (req, res) => {
   try {
@@ -100,6 +205,27 @@ router.put('/:id/complete', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /executions/{id}:
+ *   get:
+ *     summary: Get execution details
+ *     description: Returns execution information including step results and tester info
+ *     tags: [Executions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Execution details returned
+ *       404:
+ *         description: Execution not found
+ */
 // ── GET EXECUTION ─────────────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {

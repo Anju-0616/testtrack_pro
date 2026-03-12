@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: TestCases
+ *   description: Test case management APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
@@ -12,6 +19,59 @@ async function requireMember(projectId, userId, res) {
   return true
 }
 
+/**
+ * @swagger
+ * /testcases:
+ *   post:
+ *     summary: Create a new test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, title, module]
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               module:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *               severity:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               steps:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     action:
+ *                       type: string
+ *                     testData:
+ *                       type: string
+ *                     expectedResult:
+ *                       type: string
+ *                     notes:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Test case created
+ */
 // CREATE
 router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -61,6 +121,51 @@ router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testcases:
+ *   get:
+ *     summary: Get all test cases with filters and pagination
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: module
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Paginated list of test cases
+ */
 // GET ALL
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -113,6 +218,26 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testcases/{id}:
+ *   get:
+ *     summary: Get test case details
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Test case details
+ *       404:
+ *         description: Test case not found
+ */
 // GET ONE
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -136,6 +261,29 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testcases/{id}:
+ *   put:
+ *     summary: Update a test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Test case updated
+ */
 // UPDATE
 router.put('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -196,6 +344,24 @@ router.put('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /testcases/{id}:
+ *   delete:
+ *     summary: Soft delete a test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Test case deleted
+ */
 // DELETE
 router.delete('/:id', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -215,6 +381,24 @@ router.delete('/:id', authenticate, authorizeRole('TESTER'), async (req, res) =>
   }
 })
 
+/**
+ * @swagger
+ * /testcases/{id}/clone:
+ *   post:
+ *     summary: Clone an existing test case
+ *     tags: [TestCases]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       201:
+ *         description: Test case cloned
+ */
 // CLONE
 router.post('/:id/clone', authenticate, async (req, res) => {
   try {

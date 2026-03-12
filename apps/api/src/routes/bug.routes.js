@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Bugs
+ *   description: Bug lifecycle management APIs
+ */
+
 const express = require('express')
 const prisma = require('../prisma')
 const { authenticate, authorizeRole } = require('../middleware/auth')
@@ -19,6 +26,53 @@ async function requireMember(projectId, userId, res) {
   return true
 }
 
+/**
+ * @swagger
+ * /bugs:
+ *   post:
+ *     summary: Create a new bug
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - projectId
+ *               - title
+ *               - description
+ *               - severity
+ *               - priority
+ *             properties:
+ *               projectId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               stepsToReproduce:
+ *                 type: string
+ *               expectedBehavior:
+ *                 type: string
+ *               actualBehavior:
+ *                 type: string
+ *               severity:
+ *                 type: string
+ *                 example: MAJOR
+ *               priority:
+ *                 type: string
+ *                 example: P2_HIGH
+ *               assignedToId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Bug created successfully
+ *       400:
+ *         description: Validation error
+ */
 // ── CREATE BUG ────────────────────────────────────────────────────────────────
 router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -50,6 +104,44 @@ router.post('/', authenticate, authorizeRole('TESTER'), async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs:
+ *   get:
+ *     summary: Get all bugs for a project
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of bugs
+ */
 // ── GET ALL BUGS (scoped to project) ─────────────────────────────────────────
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -85,6 +177,26 @@ router.get('/', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/{id}:
+ *   get:
+ *     summary: Get a single bug by ID
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Bug details returned
+ *       404:
+ *         description: Bug not found
+ */
 // ── GET SINGLE BUG ────────────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -110,6 +222,35 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/{id}/assign:
+ *   patch:
+ *     summary: Assign bug to a developer
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - assignedToId
+ *             properties:
+ *               assignedToId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Bug assigned successfully
+ */
 // ── ASSIGN BUG ────────────────────────────────────────────────────────────────
 router.patch('/:id/assign', authenticate, authorizeRole('TESTER'), async (req, res) => {
   try {
@@ -142,6 +283,40 @@ router.patch('/:id/assign', authenticate, authorizeRole('TESTER'), async (req, r
   }
 })
 
+/**
+ * @swagger
+ * /bugs/{id}/status:
+ *   patch:
+ *     summary: Update bug status
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 example: IN_PROGRESS
+ *               fixNotes:
+ *                 type: string
+ *               commitHash:
+ *                 type: string
+ *               branchName:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Bug status updated
+ */
 // ── UPDATE STATUS ─────────────────────────────────────────────────────────────
 router.patch('/:id/status', authenticate, async (req, res) => {
   try {
@@ -198,6 +373,18 @@ router.patch('/:id/status', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/my/assigned:
+ *   get:
+ *     summary: Get bugs assigned to the logged-in developer
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of assigned bugs
+ */
 // ── MY ASSIGNED BUGS (Developer) ──────────────────────────────────────────────
 router.get('/my/assigned', authenticate, authorizeRole('DEVELOPER'), async (req, res) => {
   try {
@@ -223,6 +410,18 @@ router.get('/my/assigned', authenticate, authorizeRole('DEVELOPER'), async (req,
   }
 })
 
+/**
+ * @swagger
+ * /bugs/my/reported:
+ *   get:
+ *     summary: Get bugs reported by the current user
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of reported bugs
+ */
 // ── REPORTED BUGS ─────────────────────────────────────────────────────────────
 router.get('/my/reported', authenticate, async (req, res) => {
   try {
@@ -242,6 +441,33 @@ router.get('/my/reported', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/{id}/comments:
+ *   post:
+ *     summary: Add a comment to a bug
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Comment added
+ */
 // ── COMMENTS ──────────────────────────────────────────────────────────────────
 router.post('/:id/comments', authenticate, async (req, res) => {
   try {
@@ -271,6 +497,24 @@ router.post('/:id/comments', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/{id}/comments:
+ *   get:
+ *     summary: Get comments for a bug
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of comments
+ */
 router.get('/:id/comments', authenticate, async (req, res) => {
   try {
     const bugId = parseInt(req.params.id)
@@ -290,6 +534,24 @@ router.get('/:id/comments', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/comments/{commentId}:
+ *   patch:
+ *     summary: Edit a bug comment
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comment updated
+ */
 router.patch('/comments/:commentId', authenticate, async (req, res) => {
   try {
     const commentId = parseInt(req.params.commentId)
@@ -308,6 +570,24 @@ router.patch('/comments/:commentId', authenticate, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /bugs/comments/{commentId}:
+ *   delete:
+ *     summary: Delete a bug comment
+ *     tags: [Bugs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Comment deleted
+ */
 router.delete('/comments/:commentId', authenticate, async (req, res) => {
   try {
     const commentId = parseInt(req.params.commentId)

@@ -1,9 +1,60 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Dashboard
+ *   description: Dashboard & analytics APIs
+ */
 const express = require("express");
 const prisma = require("../prisma");
 const { authenticate, authorizeRole } = require("../middleware/auth");
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /dashboard/common:
+ *   get:
+ *     summary: Get common dashboard statistics
+ *     description: Returns overall execution metrics, pass rate, bug counts, and trends
+ *     tags: [Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Common dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 counters:
+ *                   type: object
+ *                   properties:
+ *                     totalExecutions:
+ *                       type: integer
+ *                     totalBugs:
+ *                       type: integer
+ *                     passRate:
+ *                       type: number
+ *                 executionTrend:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       date:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ *                 bugsByStatus:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       status:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ */
 /* =====================================================
    COMMON DASHBOARD
 ===================================================== */
@@ -57,7 +108,54 @@ router.get("/common", authenticate, async (req, res) => {
   }
 });
 
-
+/**
+ * @swagger
+ * /dashboard/tester:
+ *   get:
+ *     summary: Get tester dashboard
+ *     description: Provides tester-specific metrics like executions, bugs reported, pending tests, and failures
+ *     tags: [Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Tester dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 counters:
+ *                   type: object
+ *                   properties:
+ *                     myExecutions:
+ *                       type: integer
+ *                     myBugs:
+ *                       type: integer
+ *                     pendingTests:
+ *                       type: integer
+ *                 trend:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       date:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ *                 recentFailures:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       testcase:
+ *                         type: object
+ *                         properties:
+ *                           title:
+ *                             type: string
+ *                       executedAt:
+ *                         type: string
+ */
 /* =====================================================
    TESTER DASHBOARD
 ===================================================== */
@@ -126,7 +224,53 @@ router.get("/tester", authenticate, authorizeRole("TESTER"), async (req, res) =>
   }
 });
 
-
+/**
+ * @swagger
+ * /dashboard/developer:
+ *   get:
+ *     summary: Get developer dashboard
+ *     description: Provides developer-specific bug metrics and fix trends
+ *     tags: [Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Developer dashboard data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 counters:
+ *                   type: object
+ *                   properties:
+ *                     assigned:
+ *                       type: integer
+ *                     highPriority:
+ *                       type: integer
+ *                 recentlyFixed:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 statusTrend:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       status:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ *                 fixTrend:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       date:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ */
 /* =====================================================
    DEVELOPER DASHBOARD
 ===================================================== */
@@ -196,7 +340,26 @@ router.get("/developer", authenticate, authorizeRole("DEVELOPER"), async (req, r
   }
 });
 
-
+/**
+ * @swagger
+ * /dashboard/layout:
+ *   get:
+ *     summary: Get saved dashboard layout
+ *     description: Retrieves the current user's saved dashboard widget layout
+ *     tags: [Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard layout data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 layout:
+ *                   type: object
+ */
 /* =====================================================
    LAYOUT SAVE / LOAD
 ===================================================== */
