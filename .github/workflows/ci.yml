@@ -1,0 +1,179 @@
+name: CI — Verify & Build
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+jobs:
+  # ════════════════════════════════════════════════════════════
+  # JOB 1 — BACKEND
+  # No test runner installed → boot check instead
+  # Prisma lives in apps/api/prisma/
+  # Entry point: apps/api/index.js
+  # ════════════════════════════════════════════════════════════
+  backend:
+    name: Backend — Prisma + Boot Check
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER:     testtrack
+          POSTGRES_PASSWORD: testtrack123
+          POSTGRES_DB:       testtrack_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    env:
+      DATABASE_URL:       postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
+      JWT_SECRET:         ci_jwt_secret_32_chars_minimum_xx
+      JWT_REFRESH_SECRET: ci_refresh_secret_32_chars_min_xx
+      NODE_ENV:           test
+      PORT:               5000
+      FRONTEND_URL:       http://localhost:5173
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        shell: bash
+        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: pnpm-api-${{ runner.os }}-${{ hashFiles('apps/api/pnpm-lock.yaml') }}
+          restore-keys: pnpm-api-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run migrations against test DB
+        run: npx prisma migrate deploy
+
+      - name: Boot check — server must respond on /api/health
+        run: |
+          node index.js &
+          PID=$!
+          echo "⏳ Waiting for server..."
+          for i in {1..15}; do
+            if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
+              echo "✅ Server up — /api/health returned 200"
+              kill $PID
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "❌ Server did not respond in 15s"
+          kill $PID 2>/dev/null
+          exit 1
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 2 — FRONTEND
+  # Has eslint.config.js → lint runs
+  # Build script: tsc -b && vite build (rolldown-vite override)
+  # ════════════════════════════════════════════════════════════
+  frontend:
+    name: Frontend — Lint + Typecheck + Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        shell: bash
+        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: pnpm-web-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+          restore-keys: pnpm-web-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (ESLint)
+        run: pnpm lint
+
+      - name: TypeScript check
+        run: npx tsc -b --noEmit
+
+      - name: Build (tsc -b + rolldown-vite)
+        run: pnpm build
+        env:
+          VITE_API_URL: https://testtrack-api.onrender.com/api
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist/
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 3 — GATE
+  # PR cannot merge unless both jobs pass
+  # ════════════════════════════════════════════════════════════
+  ci-gate:
+    name: CI Gate (required to merge)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: always()
+
+    steps:
+      - name: All checks must pass
+        run: |
+          echo "Backend  → ${{ needs.backend.result }}"
+          echo "Frontend → ${{ needs.frontend.result }}"
+          if [ "${{ needs.backend.result }}" = "success" ] && \
+             [ "${{ needs.frontend.result }}" = "success" ]; then
+            echo "✅ All checks passed — ready to merge"
+          else
+            echo "❌ One or more checks failed — fix before merging"
+            exit 1
+          fi

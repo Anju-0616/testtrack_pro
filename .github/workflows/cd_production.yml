@@ -1,0 +1,279 @@
+name: CD — Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false  # never cancel a running prod deploy
+
+jobs:
+  # ════════════════════════════════════════════════════════════
+  # JOB 1 — Full verification
+  # ════════════════════════════════════════════════════════════
+  verify:
+    name: Full Verify Before Production
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER:     testtrack
+          POSTGRES_PASSWORD: testtrack123
+          POSTGRES_DB:       testtrack_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        shell: bash
+        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: pnpm-prod-${{ runner.os }}-${{ hashFiles('apps/api/pnpm-lock.yaml', 'apps/web/pnpm-lock.yaml') }}
+          restore-keys: pnpm-prod-${{ runner.os }}-
+
+      # ── Backend ──
+      - name: Install API deps
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/api
+
+      - name: Prisma generate + migrate
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
+
+      - name: Boot check
+        working-directory: apps/api
+        env:
+          DATABASE_URL:       postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
+          JWT_SECRET:         ci_jwt_secret_32_chars_minimum_xx
+          JWT_REFRESH_SECRET: ci_refresh_secret_32_chars_min_xx
+          NODE_ENV:           test
+          PORT:               5000
+          FRONTEND_URL:       http://localhost:5173
+        run: |
+          node index.js &
+          PID=$!
+          for i in {1..15}; do
+            if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
+              echo "✅ Server boots correctly"
+              kill $PID && exit 0
+            fi
+            sleep 1
+          done
+          kill $PID 2>/dev/null
+          echo "❌ Server failed to start"
+          exit 1
+
+      # ── Frontend ──
+      - name: Install web deps
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/web
+
+      - name: Lint
+        run: pnpm lint
+        working-directory: apps/web
+
+      - name: Typecheck + build
+        run: pnpm build
+        working-directory: apps/web
+        env:
+          VITE_API_URL: ${{ secrets.PROD_API_URL }}
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 2 — Create GitHub release tag
+  # ════════════════════════════════════════════════════════════
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: verify
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version tag
+        id: tag
+        run: |
+          VERSION="v$(date +'%Y.%m.%d').${{ github.run_number }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Get recent commits
+        id: changelog
+        run: |
+          LOG=$(git log --oneline -10 --pretty=format:"- %s (%h)")
+          echo "log<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG"     >> $GITHUB_OUTPUT
+          echo "EOF"      >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version   = '${{ steps.tag.outputs.version }}'
+            const changelog = `${{ steps.changelog.outputs.log }}`
+            await github.rest.repos.createRelease({
+              owner:            context.repo.owner,
+              repo:             context.repo.repo,
+              tag_name:         version,
+              name:             `TestTrack Pro ${version}`,
+              body:             `## Changes\n\n${changelog}`,
+              draft:            false,
+              prerelease:       false,
+              target_commitish: context.sha
+            })
+            console.log(`✅ Release ${version} created`)
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 3 — Deploy API → Render production
+  # Render Build Command:
+  #   pnpm install && npx prisma generate && npx prisma migrate deploy
+  # Render Start Command:
+  #   node index.js
+  # ════════════════════════════════════════════════════════════
+  deploy-api:
+    name: Deploy API → Render Production
+    runs-on: ubuntu-latest
+    needs: [verify, release]
+    environment: production  # requires manual approval if configured
+
+    steps:
+      - name: Trigger Render production deploy hook
+        run: |
+          echo "🚀 Deploying API to production..."
+          curl -s "${{ secrets.RENDER_PROD_DEPLOY_HOOK }}"
+          echo ""
+          echo "✅ Hook triggered"
+
+      - name: Wait for Render build
+        run: |
+          echo "⏳ Waiting 2 minutes for build, migration and start..."
+          sleep 120
+
+      - name: Verify production API is live
+        run: |
+          for i in {1..12}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "${{ secrets.PROD_API_URL }}/health")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Production API is live!"
+              exit 0
+            fi
+            echo "  Attempt $i: HTTP $STATUS — waiting 30s..."
+            sleep 30
+          done
+          echo "❌ Production API did not come up — check Render logs immediately"
+          exit 1
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 4 — Deploy Frontend → Vercel production
+  # ════════════════════════════════════════════════════════════
+  deploy-frontend:
+    name: Deploy Frontend → Vercel Production
+    runs-on: ubuntu-latest
+    needs: [verify, release]
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+
+      - name: Deploy to Vercel production
+        run: |
+          vercel \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --prod \
+            --yes \
+            --cwd apps/web
+        env:
+          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 5 — Production smoke tests
+  # ════════════════════════════════════════════════════════════
+  smoke-test:
+    name: Smoke Test Production
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-frontend]
+
+    steps:
+      - name: Health check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.PROD_API_URL }}/health")
+          [ "$STATUS" = "200" ] && echo "✅ /health OK" || (echo "❌ /health $STATUS" && exit 1)
+
+      - name: Auth endpoint alive
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.PROD_API_URL }}/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"smoke@test.com","password":"wrongpassword"}')
+          if [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ] || [ "$STATUS" = "422" ]; then
+            echo "✅ /auth/login alive (HTTP $STATUS)"
+          else
+            echo "❌ Unexpected: $STATUS" && exit 1
+          fi
+
+      - name: Swagger docs
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.PROD_API_BASE_URL }}/api-docs/")
+          echo "📚 Swagger: HTTP $STATUS"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  🎉 Production deploy complete!"
+          echo "  Version: ${{ needs.release.outputs.version }}"
+          echo "  API: ${{ secrets.PROD_API_URL }}"
+          echo "═══════════════════════════════════════"
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "🚨 PRODUCTION SMOKE TESTS FAILED"
+          echo "Check Render and Vercel logs immediately."
+          exit 1
