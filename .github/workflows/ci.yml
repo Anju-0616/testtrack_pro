@@ -42,6 +42,11 @@ jobs:
       NODE_ENV:           test
       PORT:               5000
       FRONTEND_URL:       http://localhost:5173
+      # Dummy values — real keys only needed in production (set in Render dashboard)
+      RESEND_API_KEY:     re_ci_dummy_key_not_real
+      CLOUDINARY_CLOUD_NAME: ci_dummy
+      CLOUDINARY_API_KEY:    ci_dummy
+      CLOUDINARY_API_SECRET: ci_dummy
 
     steps:
       - name: Checkout code
