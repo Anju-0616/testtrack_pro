@@ -174,7 +174,7 @@ jobs:
       - name: Auth endpoint alive
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.PROD_API_URL }}/auth/login" \
+            -X POST "https://testtrack-pro-9jys.onrender.com/auth/login" \
             -H "Content-Type: application/json" \
             -d '{"email":"smoke@test.com","password":"wrong"}')
           if [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ] || [ "$STATUS" = "422" ]; then
