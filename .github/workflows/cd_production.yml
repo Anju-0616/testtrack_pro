@@ -115,7 +115,7 @@ jobs:
       - name: Verify production API live
         run: |
           for i in {1..12}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PROD_API_URL }}/health")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://testtrack-pro-9jys.onrender.com/health")
             if [ "$STATUS" = "200" ]; then
               echo "✅ Production API live!"
               exit 0
@@ -161,7 +161,7 @@ jobs:
       - name: API health check
         run: |
           for i in {1..5}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PROD_API_URL }}/health")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://testtrack-pro-9jys.onrender.com/health")
             if [ "$STATUS" = "200" ]; then
               echo "✅ Production API healthy"
               exit 0
