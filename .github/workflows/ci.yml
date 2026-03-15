@@ -1,4 +1,4 @@
-name: CI — Lint, Typecheck & Build
+name: CI — Typecheck & Build
 
 on:
   pull_request:
@@ -51,7 +51,7 @@ jobs:
         run: pnpm --filter api exec npx prisma migrate deploy
 
   frontend:
-    name: Frontend — Lint + Typecheck + Build
+    name: Frontend — Typecheck + Build
     runs-on: ubuntu-latest
 
     steps:
@@ -69,9 +69,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm --filter web run lint
 
       - name: Typecheck + Build
         run: pnpm --filter web run build

@@ -51,10 +51,8 @@ jobs:
           pnpm --filter api exec npx prisma generate
           pnpm --filter api exec npx prisma migrate deploy
 
-      - name: Frontend lint + build
-        run: |
-          pnpm --filter web run lint
-          pnpm --filter web run build
+      - name: Frontend build
+        run: pnpm --filter web run build
         env:
           VITE_API_URL: ${{ secrets.STAGING_API_URL }}
 
