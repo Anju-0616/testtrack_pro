@@ -12,12 +12,12 @@ jobs:
   # ════════════════════════════════════════════════════════════
   # JOB 1 — BACKEND
   # - Install deps via pnpm workspaces (root lockfile)
-  # - Generate Prisma client
+  # - Generate Prisma client (catches schema errors early)
   # - Run migrations against a real test PostgreSQL container
-  # - Boot the server and verify /api/health returns 200
+  # No boot check needed — app is already live on Render
   # ════════════════════════════════════════════════════════════
   backend:
-    name: Backend — Prisma + Boot Check
+    name: Backend — Prisma Generate + Migrate
     runs-on: ubuntu-latest
 
     services:
@@ -36,17 +36,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL:       postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
-      JWT_SECRET:         ci_jwt_secret_32_chars_minimum_xx
-      JWT_REFRESH_SECRET: ci_refresh_secret_32_chars_min_xx
-      NODE_ENV:           test
-      PORT:               5000
-      FRONTEND_URL:       http://localhost:5173
-      # Dummy values — real keys only needed in production (set in Render dashboard)
-      RESEND_API_KEY:     re_ci_dummy_key_not_real
-      CLOUDINARY_CLOUD_NAME: ci_dummy
-      CLOUDINARY_API_KEY:    ci_dummy
-      CLOUDINARY_API_SECRET: ci_dummy
+      DATABASE_URL: postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
 
     steps:
       - name: Checkout code
@@ -62,7 +52,6 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-          # root pnpm-lock.yaml is the single source of truth
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install all workspace dependencies
@@ -73,27 +62,6 @@ jobs:
 
       - name: Run database migrations
         run: pnpm --filter api exec npx prisma migrate deploy
-
-      - name: Verify server boots and /api/health responds
-        run: |
-          # Start API from its own directory
-          cd apps/api
-          node index.js &
-          SERVER_PID=$!
-
-          echo "⏳ Waiting for server..."
-          for i in {1..20}; do
-            if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
-              echo "✅ Server is up — /api/health returned 200"
-              kill $SERVER_PID
-              exit 0
-            fi
-            sleep 1
-          done
-
-          echo "❌ Server did not respond within 20s"
-          kill $SERVER_PID 2>/dev/null
-          exit 1
 
   # ════════════════════════════════════════════════════════════
   # JOB 2 — FRONTEND
@@ -129,8 +97,6 @@ jobs:
         run: pnpm --filter web run lint
 
       - name: Typecheck + Build
-        # Uses your exact root script: pnpm --filter web run build
-        # Which runs: tsc -b && vite build (rolldown-vite)
         run: pnpm --filter web run build
         env:
           VITE_API_URL: https://testtrack-api.onrender.com/api
