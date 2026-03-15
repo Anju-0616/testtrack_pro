@@ -1,7 +1,5 @@
 name: CI — Lint, Typecheck & Build
 
-# Runs on every PR to main or develop
-# Runs on every direct push to develop
 on:
   pull_request:
     branches: [main, develop]
@@ -9,13 +7,6 @@ on:
     branches: [develop]
 
 jobs:
-  # ════════════════════════════════════════════════════════════
-  # JOB 1 — BACKEND
-  # - Install deps via pnpm workspaces (root lockfile)
-  # - Generate Prisma client (catches schema errors early)
-  # - Run migrations against a real test PostgreSQL container
-  # No boot check needed — app is already live on Render
-  # ════════════════════════════════════════════════════════════
   backend:
     name: Backend — Prisma Generate + Migrate
     runs-on: ubuntu-latest
@@ -27,8 +18,7 @@ jobs:
           POSTGRES_USER:     testtrack
           POSTGRES_PASSWORD: testtrack123
           POSTGRES_DB:       testtrack_test
-        ports:
-          - 5432:5432
+        ports: [5432:5432]
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -39,58 +29,45 @@ jobs:
       DATABASE_URL: postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm 8.15.4
-        uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v3
         with:
           version: 8.15.4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install all workspace dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Prisma client
+      - name: Prisma generate
         run: pnpm --filter api exec npx prisma generate
 
-      - name: Run database migrations
+      - name: Prisma migrate
         run: pnpm --filter api exec npx prisma migrate deploy
 
-  # ════════════════════════════════════════════════════════════
-  # JOB 2 — FRONTEND
-  # - Install deps via pnpm workspaces
-  # - ESLint  (eslint.config.js exists in apps/web)
-  # - tsc -b  (TypeScript strict check — your exact build script)
-  # - vite build via rolldown-vite (your override)
-  # ════════════════════════════════════════════════════════════
   frontend:
     name: Frontend — Lint + Typecheck + Build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm 8.15.4
-        uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v3
         with:
           version: 8.15.4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install all workspace dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Lint
@@ -101,35 +78,23 @@ jobs:
         env:
           VITE_API_URL: https://testtrack-api.onrender.com/api
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: web-dist
           path: apps/web/dist/
           retention-days: 1
 
-  # ════════════════════════════════════════════════════════════
-  # JOB 3 — CI GATE
-  # Both jobs must pass before a PR can be merged
-  # ════════════════════════════════════════════════════════════
   ci-gate:
-    name: CI Gate (required to merge)
+    name: CI Gate
     runs-on: ubuntu-latest
     needs: [backend, frontend]
     if: always()
-
     steps:
-      - name: Check all jobs passed
+      - name: All checks passed?
         run: |
-          BACKEND="${{ needs.backend.result }}"
-          FRONTEND="${{ needs.frontend.result }}"
-
-          echo "Backend  → $BACKEND"
-          echo "Frontend → $FRONTEND"
-
-          if [ "$BACKEND" = "success" ] && [ "$FRONTEND" = "success" ]; then
-            echo "✅ All checks passed — ready to merge."
+          if [ "${{ needs.backend.result }}" = "success" ] && [ "${{ needs.frontend.result }}" = "success" ]; then
+            echo "✅ All checks passed!"
           else
-            echo "❌ One or more checks failed. Fix before merging."
+            echo "❌ One or more checks failed."
             exit 1
           fi
