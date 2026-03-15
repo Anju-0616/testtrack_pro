@@ -1,5 +1,6 @@
 name: CD — Deploy to Staging
 
+# Triggers on every merge into develop
 on:
   push:
     branches: [develop]
@@ -10,7 +11,7 @@ concurrency:
 
 jobs:
   # ════════════════════════════════════════════════════════════
-  # JOB 1 — Verify before deploying to staging
+  # JOB 1 — VERIFY (same checks as CI)
   # ════════════════════════════════════════════════════════════
   verify:
     name: Verify Before Staging Deploy
@@ -33,61 +34,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm 8.15.4
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Get pnpm store path
-        id: pnpm-cache
-        shell: bash
-        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.dir }}
-          key: pnpm-staging-${{ runner.os }}-${{ hashFiles('apps/api/pnpm-lock.yaml', 'apps/web/pnpm-lock.yaml') }}
-          restore-keys: pnpm-staging-${{ runner.os }}-
-
-      # ── Backend ──
-      - name: Install API deps
+      - name: Install workspace deps
         run: pnpm install --frozen-lockfile
-        working-directory: apps/api
 
       - name: Prisma generate + migrate
         run: |
-          npx prisma generate
-          npx prisma migrate deploy
-        working-directory: apps/api
+          pnpm --filter api exec npx prisma generate
+          pnpm --filter api exec npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
 
-      # ── Frontend ──
-      - name: Install web deps
-        run: pnpm install --frozen-lockfile
-        working-directory: apps/web
-
-      - name: Lint
-        run: pnpm lint
-        working-directory: apps/web
-
-      - name: Build
-        run: pnpm build
-        working-directory: apps/web
+      - name: Frontend lint + build
+        run: |
+          pnpm --filter web run lint
+          pnpm --filter web run build
         env:
           VITE_API_URL: ${{ secrets.STAGING_API_URL }}
 
   # ════════════════════════════════════════════════════════════
-  # JOB 2 — Deploy API to Render staging
+  # JOB 2 — DEPLOY API → RENDER STAGING
   # Render Build Command (set in Render dashboard):
-  #   pnpm install && npx prisma generate && npx prisma migrate deploy
+  #   pnpm install --frozen-lockfile && pnpm --filter api exec npx prisma generate && pnpm --filter api exec npx prisma migrate deploy
   # Render Start Command:
-  #   node index.js
+  #   node apps/api/index.js
+  # Root Directory: leave blank (use repo root — needs pnpm-lock.yaml)
   # ════════════════════════════════════════════════════════════
   deploy-api:
     name: Deploy API → Render Staging
@@ -101,11 +82,11 @@ jobs:
           echo "🚀 Triggering Render staging deploy..."
           curl -s "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}"
           echo ""
-          echo "✅ Hook triggered — Render will install, migrate, and start"
+          echo "✅ Deploy hook triggered"
 
       - name: Wait for Render to build and start
         run: |
-          echo "⏳ Waiting 90s for Render build..."
+          echo "⏳ Waiting 90s for Render to install, migrate and start..."
           sleep 90
 
       - name: Health check — staging API
@@ -124,7 +105,12 @@ jobs:
           exit 1
 
   # ════════════════════════════════════════════════════════════
-  # JOB 3 — Deploy frontend to Vercel (staging preview)
+  # JOB 3 — DEPLOY FRONTEND → VERCEL STAGING
+  # Uses vercel.json at repo root which already has:
+  #   installCommand: pnpm install
+  #   buildCommand:   pnpm --filter web run build
+  #   outputDirectory: apps/web/dist
+  #   rewrites:       SPA fallback to index.html
   # ════════════════════════════════════════════════════════════
   deploy-frontend:
     name: Deploy Frontend → Vercel Staging
@@ -134,30 +120,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm 8.15.4
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
       - name: Install Vercel CLI
         run: pnpm add -g vercel@latest
 
-      - name: Deploy to Vercel (preview)
+      - name: Deploy to Vercel (staging preview)
         run: |
+          # No --prod flag = preview/staging deployment
+          # vercel.json at root is picked up automatically
           vercel \
             --token=${{ secrets.VERCEL_TOKEN }} \
-            --yes \
-            --cwd apps/web
+            --yes
         env:
           VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   # ════════════════════════════════════════════════════════════
-  # JOB 4 — Smoke test staging
+  # JOB 4 — SMOKE TEST STAGING
   # ════════════════════════════════════════════════════════════
   smoke-test:
     name: Smoke Test Staging
@@ -165,11 +152,13 @@ jobs:
     needs: [deploy-api, deploy-frontend]
 
     steps:
-      - name: Health endpoint
+      - name: API health check
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "${{ secrets.STAGING_API_URL }}/health")
-          [ "$STATUS" = "200" ] && echo "✅ /health OK" || (echo "❌ /health $STATUS" && exit 1)
+          [ "$STATUS" = "200" ] \
+            && echo "✅ /api/health OK" \
+            || (echo "❌ /api/health returned $STATUS" && exit 1)
 
       - name: Auth endpoint alive
         run: |
@@ -178,12 +167,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"email":"smoke@test.com","password":"wrongpassword"}')
           if [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ] || [ "$STATUS" = "422" ]; then
-            echo "✅ /auth/login alive (HTTP $STATUS)"
+            echo "✅ /auth/login alive (HTTP $STATUS as expected)"
           else
-            echo "❌ Unexpected: $STATUS" && exit 1
+            echo "❌ /auth/login unexpected: HTTP $STATUS"
+            exit 1
           fi
 
-      - name: Swagger docs
+      - name: Swagger docs accessible
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "${{ secrets.STAGING_API_BASE_URL }}/api-docs/")
@@ -191,7 +181,7 @@ jobs:
 
       - name: Summary
         run: |
-          echo "════════════════════════════════"
+          echo "════════════════════════════════════"
           echo "  ✅ Staging deploy complete!"
           echo "  API: ${{ secrets.STAGING_API_URL }}"
-          echo "════════════════════════════════"
+          echo "════════════════════════════════════"

@@ -1,5 +1,7 @@
-name: CI — Verify & Build
+name: CI — Lint, Typecheck & Build
 
+# Runs on every PR to main or develop
+# Runs on every direct push to develop
 on:
   pull_request:
     branches: [main, develop]
@@ -9,9 +11,10 @@ on:
 jobs:
   # ════════════════════════════════════════════════════════════
   # JOB 1 — BACKEND
-  # No test runner installed → boot check instead
-  # Prisma lives in apps/api/prisma/
-  # Entry point: apps/api/index.js
+  # - Install deps via pnpm workspaces (root lockfile)
+  # - Generate Prisma client
+  # - Run migrations against a real test PostgreSQL container
+  # - Boot the server and verify /api/health returns 200
   # ════════════════════════════════════════════════════════════
   backend:
     name: Backend — Prisma + Boot Check
@@ -24,16 +27,13 @@ jobs:
           POSTGRES_USER:     testtrack
           POSTGRES_PASSWORD: testtrack123
           POSTGRES_DB:       testtrack_test
-        ports: [5432:5432]
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
-    defaults:
-      run:
-        working-directory: apps/api
 
     env:
       DATABASE_URL:       postgresql://testtrack:testtrack123@localhost:5432/testtrack_test
@@ -44,111 +44,93 @@ jobs:
       FRONTEND_URL:       http://localhost:5173
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup pnpm 8.15.4
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
+          # root pnpm-lock.yaml is the single source of truth
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Get pnpm store path
-        id: pnpm-cache
-        shell: bash
-        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.dir }}
-          key: pnpm-api-${{ runner.os }}-${{ hashFiles('apps/api/pnpm-lock.yaml') }}
-          restore-keys: pnpm-api-${{ runner.os }}-
-
-      - name: Install dependencies
+      - name: Install all workspace dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: pnpm --filter api exec npx prisma generate
 
-      - name: Run migrations against test DB
-        run: npx prisma migrate deploy
+      - name: Run database migrations
+        run: pnpm --filter api exec npx prisma migrate deploy
 
-      - name: Boot check — server must respond on /api/health
+      - name: Verify server boots and /api/health responds
         run: |
+          # Start API from its own directory
+          cd apps/api
           node index.js &
-          PID=$!
+          SERVER_PID=$!
+
           echo "⏳ Waiting for server..."
-          for i in {1..15}; do
+          for i in {1..20}; do
             if curl -sf http://localhost:5000/api/health > /dev/null 2>&1; then
-              echo "✅ Server up — /api/health returned 200"
-              kill $PID
+              echo "✅ Server is up — /api/health returned 200"
+              kill $SERVER_PID
               exit 0
             fi
             sleep 1
           done
-          echo "❌ Server did not respond in 15s"
-          kill $PID 2>/dev/null
+
+          echo "❌ Server did not respond within 20s"
+          kill $SERVER_PID 2>/dev/null
           exit 1
 
   # ════════════════════════════════════════════════════════════
   # JOB 2 — FRONTEND
-  # Has eslint.config.js → lint runs
-  # Build script: tsc -b && vite build (rolldown-vite override)
+  # - Install deps via pnpm workspaces
+  # - ESLint  (eslint.config.js exists in apps/web)
+  # - tsc -b  (TypeScript strict check — your exact build script)
+  # - vite build via rolldown-vite (your override)
   # ════════════════════════════════════════════════════════════
   frontend:
     name: Frontend — Lint + Typecheck + Build
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: apps/web
-
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup pnpm 8.15.4
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Get pnpm store path
-        id: pnpm-cache
-        shell: bash
-        run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.dir }}
-          key: pnpm-web-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
-          restore-keys: pnpm-web-${{ runner.os }}-
-
-      - name: Install dependencies
+      - name: Install all workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint (ESLint)
-        run: pnpm lint
+      - name: Lint
+        run: pnpm --filter web run lint
 
-      - name: TypeScript check
-        run: npx tsc -b --noEmit
-
-      - name: Build (tsc -b + rolldown-vite)
-        run: pnpm build
+      - name: Typecheck + Build
+        # Uses your exact root script: pnpm --filter web run build
+        # Which runs: tsc -b && vite build (rolldown-vite)
+        run: pnpm --filter web run build
         env:
           VITE_API_URL: https://testtrack-api.onrender.com/api
 
-      - name: Upload dist artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
@@ -156,8 +138,8 @@ jobs:
           retention-days: 1
 
   # ════════════════════════════════════════════════════════════
-  # JOB 3 — GATE
-  # PR cannot merge unless both jobs pass
+  # JOB 3 — CI GATE
+  # Both jobs must pass before a PR can be merged
   # ════════════════════════════════════════════════════════════
   ci-gate:
     name: CI Gate (required to merge)
@@ -166,14 +148,17 @@ jobs:
     if: always()
 
     steps:
-      - name: All checks must pass
+      - name: Check all jobs passed
         run: |
-          echo "Backend  → ${{ needs.backend.result }}"
-          echo "Frontend → ${{ needs.frontend.result }}"
-          if [ "${{ needs.backend.result }}" = "success" ] && \
-             [ "${{ needs.frontend.result }}" = "success" ]; then
-            echo "✅ All checks passed — ready to merge"
+          BACKEND="${{ needs.backend.result }}"
+          FRONTEND="${{ needs.frontend.result }}"
+
+          echo "Backend  → $BACKEND"
+          echo "Frontend → $FRONTEND"
+
+          if [ "$BACKEND" = "success" ] && [ "$FRONTEND" = "success" ]; then
+            echo "✅ All checks passed — ready to merge."
           else
-            echo "❌ One or more checks failed — fix before merging"
+            echo "❌ One or more checks failed. Fix before merging."
             exit 1
           fi
